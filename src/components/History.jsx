@@ -5,6 +5,7 @@ import { collection, query, orderBy, getDocs } from 'firebase/firestore';
 import { Download, FileText, Calendar, Filter, Activity } from 'lucide-react';
 import { format, subDays, isAfter, isBefore, startOfDay, endOfDay } from 'date-fns';
 import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
 
 // Chart.js imports
@@ -96,6 +97,58 @@ export default function History() {
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
       
       pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+
+      // Inject actual log registry directly using autoTable to prevent page cutoffs
+      const tableBody = filteredLogs.map(log => {
+        let dateStr = 'Invalid Date';
+        try { dateStr = format(new Date(log.timestamp), 'MMM dd, yyyy HH:mm'); } catch(e) {}
+        const isHigh = log.systolic > 140 || log.diastolic > 90;
+        return [
+          dateStr,
+          log.systolic.toString(),
+          log.diastolic.toString(),
+          log.pulse ? log.pulse.toString() : '-',
+          isHigh ? 'High BP' : '-'
+        ];
+      });
+
+      autoTable(pdf, {
+        startY: pdfHeight + 10,
+        head: [['Date & Time', 'Systolic', 'Diastolic', 'Pulse', 'Alerts']],
+        body: tableBody,
+        theme: 'grid',
+        headStyles: { fillColor: [30, 41, 59] }, // slate-800
+        alternateRowStyles: { fillColor: [248, 250, 252] }, // slate-50
+        didParseCell: function(data) {
+          if (data.section === 'body') {
+            const isHigh = data.row.raw[4] === 'High BP';
+            if (data.column.index === 1 && isHigh) {
+              data.cell.styles.textColor = [185, 28, 28]; // red-700
+              data.cell.styles.fontStyle = 'bold';
+            }
+            if (data.column.index === 2 && isHigh) {
+              data.cell.styles.textColor = [29, 78, 216]; // blue-700
+              data.cell.styles.fontStyle = 'bold';
+            }
+            if (data.column.index === 4 && isHigh) {
+              data.cell.styles.textColor = [220, 38, 38]; // red-600
+              data.cell.styles.fontStyle = 'bold';
+            }
+          }
+        },
+        margin: { top: 15, bottom: 20 },
+        pageBreak: 'auto'
+      });
+
+      // Add professional footer dynamically to every generated page
+      const pageCount = pdf.internal.getNumberOfPages();
+      for(let i = 1; i <= pageCount; i++) {
+        pdf.setPage(i);
+        pdf.setFontSize(8);
+        pdf.setTextColor(148, 163, 184); // slate-400
+        pdf.text('BPly Dashboards • Personal Reference  |  https://bply.vercel.app', pdfWidth / 2, pdf.internal.pageSize.getHeight() - 8, { align: 'center' });
+      }
+
       pdf.save(`BP_Report_${userProfile?.name}.pdf`);
     } catch (err) {
       console.error('PDF Generation Error:', err);
@@ -287,55 +340,10 @@ export default function History() {
             This document was generated on {format(new Date(), 'MMMM dd, yyyy')} via the BPly Tracker Application.
           </p>
 
-          <div style={{ marginBottom: '48px' }}>
+          <div style={{ marginBottom: '12px' }}>
             <h3 style={{ fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#1e293b', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px', marginBottom: '16px' }}>Visualization</h3>
             <div style={{ height: '350px', width: '100%', padding: '16px', border: '1px solid #e2e8f0', borderRadius: '12px', backgroundColor: '#f8fafc' }}>
               <Line data={chartData} options={{...chartOptions, animation: false, responsive: true, maintainAspectRatio: false}} />
-            </div>
-          </div>
-
-          <div style={{ marginBottom: '32px' }}>
-            <h3 style={{ fontSize: '20px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#1e293b', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px', marginBottom: '16px' }}>Log Registry</h3>
-            <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse', fontSize: '14px', border: '1px solid #cbd5e1' }}>
-              <thead>
-                <tr style={{ backgroundColor: '#1e293b', color: '#ffffff' }}>
-                  <th style={{ padding: '10px 16px', fontWeight: 'bold', textTransform: 'uppercase' }}>Date & Time</th>
-                  <th style={{ padding: '10px 16px', fontWeight: 'bold', textTransform: 'uppercase', textAlign: 'center' }}>Systolic</th>
-                  <th style={{ padding: '10px 16px', fontWeight: 'bold', textTransform: 'uppercase', textAlign: 'center' }}>Diastolic</th>
-                  <th style={{ padding: '10px 16px', fontWeight: 'bold', textTransform: 'uppercase', textAlign: 'center' }}>Pulse</th>
-                  <th style={{ padding: '10px 16px', fontWeight: 'bold', textTransform: 'uppercase', textAlign: 'center' }}>Alerts</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredLogs.map((log, index) => {
-                  const isHigh = log.systolic > 140 || log.diastolic > 90;
-                  return (
-                    <tr key={log.id} style={{ backgroundColor: index % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
-                      <td style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0' }}>
-                        {(() => {
-                          try { return format(new Date(log.timestamp), 'MMM dd, yyyy HH:mm'); } 
-                          catch(e) { return 'Invalid Date'; }
-                        })()}
-                      </td>
-                      <td style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0', textAlign: 'center', fontWeight: 'bold', color: isHigh ? '#b91c1c' : 'inherit', backgroundColor: isHigh ? '#fef2f2' : 'transparent' }}>{log.systolic}</td>
-                      <td style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0', textAlign: 'center', fontWeight: 'bold', color: isHigh ? '#1d4ed8' : 'inherit', backgroundColor: isHigh ? '#eff6ff' : 'transparent' }}>{log.diastolic}</td>
-                      <td style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0', textAlign: 'center', color: '#475569' }}>{log.pulse || '-'}</td>
-                      <td style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0', textAlign: 'center' }}>
-                        {isHigh ? <span style={{ color: '#dc2626', fontWeight: 'bold', textTransform: 'uppercase', fontSize: '12px' }}>High BP</span> : <span style={{ color: '#94a3b8' }}>-</span>}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-          
-          <div style={{ textAlign: 'center', marginTop: '64px', paddingTop: '16px', borderTop: '2px solid #1e293b' }}>
-            <div style={{ color: '#64748b', fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '4px' }}>
-              BPly Dashboards • Personal Reference
-            </div>
-            <div style={{ color: '#94a3b8', fontSize: '11px', letterSpacing: '0.05em' }}>
-              https://bply.vercel.app
             </div>
           </div>
         </div>
