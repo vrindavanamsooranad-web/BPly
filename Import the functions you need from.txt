@@ -1,0 +1,17 @@
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyCLxcFU7CeHU0j4XREvEB6dJR288b14PtI",
+  authDomain: "bply-431b6.firebaseapp.com",
+  projectId: "bply-431b6",
+  storageBucket: "bply-431b6.firebasestorage.app",
+  messagingSenderId: "818029019990",
+  appId: "1:818029019990:web:321f5114fb813fda5b8cf7"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
