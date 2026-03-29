@@ -335,7 +335,7 @@ export default function History() {
               BPly Dashboards • Personal Reference
             </div>
             <div style={{ color: '#94a3b8', fontSize: '11px', letterSpacing: '0.05em' }}>
-              www.bply.vercel.com
+              https://bply.vercel.app
             </div>
           </div>
         </div>
