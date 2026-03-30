@@ -117,6 +117,17 @@ export default function Settings() {
     } catch(err) {}
   };
 
+  const sendTestNotification = () => {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification('BPly Test Reminder', {
+        body: 'Success! This device is ready to receive automated BPly push notifications.',
+        icon: '/favicon.svg'
+      });
+    } else {
+      alert('Please enable clinical reminders below to securely grant browser permissions first!');
+    }
+  };
+
   const handleShare = async (e) => {
     e.preventDefault();
     if (!emailInput || !emailInput.includes('@')) {
@@ -220,9 +231,17 @@ export default function Settings() {
 
         {/* Push Notification Reminders */}
         <div className="mb-10">
-          <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-3 border-b border-slate-100 pb-4 mb-6">
-            <Bell className="w-6 h-6 text-primary-500" /> Daily Reminders
-          </h2>
+          <div className="flex justify-between items-center border-b border-slate-100 pb-4 mb-6">
+            <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-3">
+              <Bell className="w-6 h-6 text-primary-500" /> Daily Reminders
+            </h2>
+            <button 
+              onClick={sendTestNotification} 
+              className="text-sm bg-primary-100 hover:bg-primary-200 text-primary-700 px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap"
+            >
+              Test Notification
+            </button>
+          </div>
           <p className="text-slate-600 mb-6 leading-relaxed">Never miss a blood pressure check. Enable automatic setup permissions securely so your device can receive scheduled network tracking prompts dynamically.</p>
           
           <div className="space-y-4">
