@@ -66,6 +66,14 @@ export default function History() {
     return true;
   });
 
+  const groupedLogs = filteredLogs.reduce((acc, log) => {
+    let dateKey = 'Invalid Date';
+    try { dateKey = format(new Date(log.timestamp), 'MMMM dd, yyyy'); } catch(e) {}
+    if (!acc[dateKey]) acc[dateKey] = [];
+    acc[dateKey].push(log);
+    return acc;
+  }, {});
+
   const [showPdf, setShowPdf] = useState(false);
 
   const generatePDF = async () => {
@@ -99,40 +107,49 @@ export default function History() {
       pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
 
       // Inject actual log registry directly using autoTable to prevent page cutoffs
-      const tableBody = filteredLogs.map(log => {
-        let dateStr = 'Invalid Date';
-        try { dateStr = format(new Date(log.timestamp), 'MMM dd, yyyy HH:mm'); } catch(e) {}
-        const isHigh = log.systolic > 140 || log.diastolic > 90;
-        return [
-          dateStr,
-          log.systolic.toString(),
-          log.diastolic.toString(),
-          log.pulse ? log.pulse.toString() : '-',
-          isHigh ? 'High BP' : '-'
-        ];
+      const tableBody = [];
+      Object.entries(groupedLogs).forEach(([date, logs]) => {
+        // Push a group header row spanning all 5 columns
+        tableBody.push([{ content: date, colSpan: 5, styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [15, 23, 42] } }]);
+        
+        logs.forEach(log => {
+          let timeStr = 'Invalid Time';
+          try { timeStr = format(new Date(log.timestamp), 'hh:mm a'); } catch(e) {}
+          const isHigh = log.systolic > 140 || log.diastolic > 90;
+          tableBody.push([
+            timeStr,
+            log.systolic.toString(),
+            log.diastolic.toString(),
+            log.pulse ? log.pulse.toString() : '-',
+            isHigh ? 'High BP' : '-'
+          ]);
+        });
       });
 
       autoTable(pdf, {
         startY: pdfHeight + 10,
-        head: [['Date & Time', 'Systolic', 'Diastolic', 'Pulse', 'Alerts']],
+        head: [['Time', 'Systolic', 'Diastolic', 'Pulse', 'Alerts']],
         body: tableBody,
         theme: 'grid',
         headStyles: { fillColor: [30, 41, 59] }, // slate-800
         alternateRowStyles: { fillColor: [248, 250, 252] }, // slate-50
         didParseCell: function(data) {
           if (data.section === 'body') {
-            const isHigh = data.row.raw[4] === 'High BP';
-            if (data.column.index === 1 && isHigh) {
-              data.cell.styles.textColor = [185, 28, 28]; // red-700
-              data.cell.styles.fontStyle = 'bold';
-            }
-            if (data.column.index === 2 && isHigh) {
-              data.cell.styles.textColor = [29, 78, 216]; // blue-700
-              data.cell.styles.fontStyle = 'bold';
-            }
-            if (data.column.index === 4 && isHigh) {
-              data.cell.styles.textColor = [220, 38, 38]; // red-600
-              data.cell.styles.fontStyle = 'bold';
+            // Check if it's a data row (length > 1) rather than a group header (length 1)
+            if (data.row.raw.length > 1) {
+              const isHigh = data.row.raw[4] === 'High BP';
+              if (data.column.index === 1 && isHigh) {
+                data.cell.styles.textColor = [185, 28, 28]; // red-700
+                data.cell.styles.fontStyle = 'bold';
+              }
+              if (data.column.index === 2 && isHigh) {
+                data.cell.styles.textColor = [29, 78, 216]; // blue-700
+                data.cell.styles.fontStyle = 'bold';
+              }
+              if (data.column.index === 4 && isHigh) {
+                data.cell.styles.textColor = [220, 38, 38]; // red-600
+                data.cell.styles.fontStyle = 'bold';
+              }
             }
           }
         },
@@ -268,7 +285,7 @@ export default function History() {
               <table className="w-full text-left border-collapse min-w-[600px]">
                 <thead>
                   <tr className="bg-slate-50 text-slate-600 text-sm">
-                    <th className="py-3 px-6 font-medium">Date & Time</th>
+                    <th className="py-3 px-6 font-medium">Time</th>
                     <th className="py-3 px-6 font-medium text-center">Systolic</th>
                     <th className="py-3 px-6 font-medium text-center">Diastolic</th>
                     <th className="py-3 px-6 font-medium text-center">Pulse</th>
@@ -276,33 +293,43 @@ export default function History() {
                   </tr>
                 </thead>
                 <tbody className="text-sm">
-                  {filteredLogs.map((log) => {
-                    // Logic: highlight if systolic > 140 OR diastolic > 90
-                    const isHigh = log.systolic > 140 || log.diastolic > 90;
-                    const isOptimal = log.systolic < 120 && log.diastolic < 80;
-                    
-                    return (
-                      <tr key={log.id} className={`border-b border-slate-50 last:border-0 transition-colors ${isHigh ? 'bg-red-50 hover:bg-red-100/50' : 'hover:bg-slate-50'}`}>
-                        <td className="py-4 px-6 text-slate-700 whitespace-nowrap">
-                          {(() => {
-                            try { return format(new Date(log.timestamp), 'MMM dd, yyyy - hh:mm a'); } 
-                            catch(e) { return 'Invalid Date'; }
-                          })()}
-                        </td>
-                        <td className={`py-4 px-6 text-center font-bold ${isHigh ? 'text-red-700' : 'text-slate-800'}`}>{log.systolic}</td>
-                        <td className={`py-4 px-6 text-center font-bold ${isHigh ? 'text-red-700' : 'text-slate-800'}`}>{log.diastolic}</td>
-                        <td className="py-4 px-6 text-center text-slate-600 font-medium">{log.pulse || '-'}</td>
-                        <td className="py-4 px-6">
-                          <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
-                            isHigh ? 'bg-red-200 text-red-800' : 
-                            isOptimal ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
-                          }`}>
-                            {isHigh ? 'High (Stage 2+)' : isOptimal ? 'Optimal' : 'Elevated / Stage 1'}
-                          </span>
+                  {Object.entries(groupedLogs).map(([date, logs]) => (
+                    <React.Fragment key={date}>
+                      {/* Date Group Header */}
+                      <tr className="bg-slate-100/80 border-y border-slate-200">
+                        <td colSpan="5" className="py-3 px-6 font-bold text-slate-800 bg-slate-100">
+                          {date}
                         </td>
                       </tr>
-                    )
-                  })}
+                      {/* Logs for this date */}
+                      {logs.map((log) => {
+                        const isHigh = log.systolic > 140 || log.diastolic > 90;
+                        const isOptimal = log.systolic < 120 && log.diastolic < 80;
+                        
+                        return (
+                          <tr key={log.id} className={`border-b border-slate-50 last:border-0 transition-colors ${isHigh ? 'bg-red-50 hover:bg-red-100/50' : 'hover:bg-slate-50'}`}>
+                            <td className="py-4 px-6 text-slate-700 whitespace-nowrap">
+                              {(() => {
+                                try { return format(new Date(log.timestamp), 'hh:mm a'); } 
+                                catch(e) { return 'Invalid Time'; }
+                              })()}
+                            </td>
+                            <td className={`py-4 px-6 text-center font-bold ${isHigh ? 'text-red-700' : 'text-slate-800'}`}>{log.systolic}</td>
+                            <td className={`py-4 px-6 text-center font-bold ${isHigh ? 'text-red-700' : 'text-slate-800'}`}>{log.diastolic}</td>
+                            <td className="py-4 px-6 text-center text-slate-600 font-medium">{log.pulse || '-'}</td>
+                            <td className="py-4 px-6">
+                              <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
+                                isHigh ? 'bg-red-200 text-red-800' : 
+                                isOptimal ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
+                              }`}>
+                                {isHigh ? 'High (Stage 2+)' : isOptimal ? 'Optimal' : 'Elevated / Stage 1'}
+                              </span>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </React.Fragment>
+                  ))}
                 </tbody>
               </table>
             </div>
