@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../firebase/config';
-import { collection, query, orderBy, getDocs } from 'firebase/firestore';
-import { Download, FileText, Calendar, Filter, Activity } from 'lucide-react';
+import { collection, query, orderBy, getDocs, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { Download, FileText, Calendar, Filter, Activity, Pencil, Trash2 } from 'lucide-react';
 import { format, subDays, isAfter, isBefore, startOfDay, endOfDay } from 'date-fns';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -20,6 +20,9 @@ export default function History() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const printRef = useRef();
+  
+  // Edit State
+  const [editingLog, setEditingLog] = useState(null);
 
   // Date Range State
   const [rangeType, setRangeType] = useState('30days'); // '30days' | 'custom'
@@ -176,6 +179,46 @@ export default function History() {
     }
   };
 
+  const handleDelete = async (log) => {
+    if (window.confirm('Are you sure you want to completely remove this blood pressure reading? This cannot be undone.')) {
+      try {
+        await deleteDoc(doc(db, `users/${currentUser.uid}/logs/${log.id}`));
+        setAllLogs(prev => prev.filter(l => l.id !== log.id));
+      } catch (err) {
+        console.error('Error deleting log:', err);
+        alert('Failed to delete the reading.');
+      }
+    }
+  };
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    if (!editingLog) return;
+    
+    // Validate bounds
+    const systolic = parseInt(editingLog.systolic, 10);
+    const diastolic = parseInt(editingLog.diastolic, 10);
+    const pulse = editingLog.pulse ? parseInt(editingLog.pulse, 10) : null;
+    
+    if (systolic < 40 || systolic > 250 || diastolic < 30 || diastolic > 150) {
+      alert("Please enter realistic blood pressure values.");
+      return;
+    }
+    
+    try {
+      const logRef = doc(db, `users/${currentUser.uid}/logs/${editingLog.id}`);
+      const updatedData = { systolic, diastolic, pulse };
+      await updateDoc(logRef, updatedData);
+      
+      // Update local state to force UI and Graph sync immediately
+      setAllLogs(prev => prev.map(l => l.id === editingLog.id ? { ...l, ...updatedData } : l));
+      setEditingLog(null);
+    } catch (err) {
+      console.error('Error updating log:', err);
+      alert('Failed to update the reading.');
+    }
+  };
+
   if (loading) return <div className="text-center py-12 text-slate-500">Loading history...</div>;
 
   const chartDataLogs = [...filteredLogs].reverse(); // oldest to newest for the graph
@@ -290,6 +333,7 @@ export default function History() {
                     <th className="py-3 px-6 font-medium text-center">Diastolic</th>
                     <th className="py-3 px-6 font-medium text-center">Pulse</th>
                     <th className="py-3 px-6 font-medium">Category</th>
+                    <th className="py-3 px-6 font-medium text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="text-sm">
@@ -297,7 +341,7 @@ export default function History() {
                     <React.Fragment key={date}>
                       {/* Date Group Header */}
                       <tr className="bg-slate-100/80 border-y border-slate-200">
-                        <td colSpan="5" className="py-3 px-6 font-bold text-slate-800 bg-slate-100">
+                        <td colSpan="6" className="py-3 px-6 font-bold text-slate-800 bg-slate-100">
                           {date}
                         </td>
                       </tr>
@@ -325,6 +369,16 @@ export default function History() {
                                 {isHigh ? 'High (Stage 2+)' : isOptimal ? 'Optimal' : 'Elevated / Stage 1'}
                               </span>
                             </td>
+                            <td className="py-4 px-6 text-center">
+                              <div className="flex items-center justify-center gap-3">
+                                <button onClick={() => setEditingLog(log)} className="text-slate-400 hover:text-primary-600 transition-colors" title="Edit">
+                                  <Pencil className="w-4 h-4" />
+                                </button>
+                                <button onClick={() => handleDelete(log)} className="text-slate-400 hover:text-red-600 transition-colors" title="Delete">
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </td>
                           </tr>
                         )
                       })}
@@ -335,6 +389,72 @@ export default function History() {
             </div>
           </div>
         </>
+      )}
+
+      {/* Edit Reading Modal Popup */}
+      {editingLog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 delay-100 animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden border border-slate-200">
+            <div className="p-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <Pencil className="w-5 h-5 text-primary-500" /> Edit Reading
+              </h3>
+              <button onClick={() => setEditingLog(null)} className="text-slate-400 hover:text-slate-600 font-bold text-2xl leading-none">&times;</button>
+            </div>
+            
+            <form onSubmit={handleEditSubmit} className="p-6 space-y-5">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-slate-700">Systolic (Top)</label>
+                  <input
+                    type="number"
+                    value={editingLog.systolic}
+                    onChange={(e) => setEditingLog({...editingLog, systolic: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 text-slate-900 font-bold text-lg rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 block p-3 transition-colors"
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-slate-700">Diastolic (Bottom)</label>
+                  <input
+                    type="number"
+                    value={editingLog.diastolic}
+                    onChange={(e) => setEditingLog({...editingLog, diastolic: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 text-slate-900 font-bold text-lg rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 block p-3 transition-colors"
+                    required
+                  />
+                </div>
+              </div>
+              
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-slate-700">Pulse / Heart Rate (bpm)</label>
+                <input
+                  type="number"
+                  value={editingLog.pulse || ''}
+                  onChange={(e) => setEditingLog({...editingLog, pulse: e.target.value})}
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 block p-3 transition-colors"
+                  placeholder="Optional"
+                />
+              </div>
+
+              <div className="pt-4 flex gap-3">
+                <button 
+                  type="button" 
+                  onClick={() => setEditingLog(null)} 
+                  className="w-full bg-white border border-slate-300 text-slate-700 font-medium rounded-xl text-sm px-5 py-3 text-center transition-colors hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="w-full text-white bg-primary-600 hover:bg-primary-700 focus:ring-4 focus:outline-none focus:ring-primary-300 font-medium rounded-xl text-sm px-5 py-3 text-center transition-all shadow-sm shadow-primary-500/20"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {/* Hidden PDF Payload (Expanded standard A4 view) */}
