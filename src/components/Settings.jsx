@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../firebase/config';
 import { doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
-import { Users, Mail, Trash2, Link as LinkIcon, AlertCircle, CheckCircle } from 'lucide-react';
+import { Users, Mail, Trash2, Link as LinkIcon, AlertCircle, CheckCircle, UserPlus } from 'lucide-react';
+import emailjs from '@emailjs/browser';
 
 export default function Settings() {
   const { currentUser, userProfile, setUserProfile } = useAuth();
   const [emailInput, setEmailInput] = useState('');
+  const [nameInput, setNameInput] = useState('');
   const [sharedList, setSharedList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -56,8 +58,27 @@ export default function Settings() {
       // Update global context cache loosely to stay in sync
       if (userProfile) setUserProfile({ ...userProfile, sharedWith: [...(userProfile.sharedWith || []), email] });
       
-      setSuccess(`Successfully granted viewer access to ${email}!`);
+      // Trigger EmailJS Invitation
+      try {
+        await emailjs.send(
+          'service_56iqe9k', 
+          'template_247grif', 
+          {
+            family_name: nameInput || 'Family Member',
+            family_email: email,
+            user_name: userProfile?.name || 'A BPly User',
+            user_id: currentUser.uid
+          }, 
+          'YNVv0rI2soZaNdWx3'
+        );
+      } catch (emailErr) {
+        console.error("EmailJS sending error:", emailErr);
+        // We do not fail the whole operation if email visually fails
+      }
+
+      setSuccess(`Successfully granted viewer access and sent invite email to ${email}!`);
       setEmailInput('');
+      setNameInput('');
     } catch (err) {
       console.error(err);
       setError("Failed to share profile. Please try again.");
@@ -115,26 +136,41 @@ export default function Settings() {
 
         {/* Invite Form */}
         <form onSubmit={handleShare} className="bg-slate-50 p-6 rounded-2xl border border-slate-100 mb-8">
-          <h3 className="text-sm font-semibold text-slate-800 uppercase tracking-wider mb-4">Grant Viewer Access</h3>
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="relative flex-1">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Mail className="h-5 w-5 text-slate-400" />
+          <h3 className="text-sm font-semibold text-slate-800 uppercase tracking-wider mb-4">Grant Viewer Access & Email Invite</h3>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="relative flex-1">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <UserPlus className="h-5 w-5 text-slate-400" />
+                </div>
+                <input
+                  type="text"
+                  value={nameInput}
+                  onChange={(e) => setNameInput(e.target.value)}
+                  className="pl-10 w-full bg-white border border-slate-300 text-slate-900 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 block p-3 px-4 shadow-sm"
+                  placeholder="Guest Name (e.g., Dr. Smith)"
+                  required
+                />
               </div>
-              <input
-                type="email"
-                value={emailInput}
-                onChange={(e) => setEmailInput(e.target.value)}
-                className="pl-10 w-full bg-white border border-slate-300 text-slate-900 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 block p-3 px-4 shadow-sm"
-                placeholder="doctor@clinic.com"
-                required
-              />
+              <div className="relative flex-1">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Mail className="h-5 w-5 text-slate-400" />
+                </div>
+                <input
+                  type="email"
+                  value={emailInput}
+                  onChange={(e) => setEmailInput(e.target.value)}
+                  className="pl-10 w-full bg-white border border-slate-300 text-slate-900 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 block p-3 px-4 shadow-sm"
+                  placeholder="doctor@clinic.com"
+                  required
+                />
+              </div>
             </div>
             <button 
               type="submit" 
-              className="text-white bg-primary-600 hover:bg-primary-700 font-medium rounded-xl text-sm px-6 py-3 transition-colors shadow-sm focus:ring-4 focus:ring-primary-100 whitespace-nowrap"
+              className="text-white bg-primary-600 hover:bg-primary-700 font-medium rounded-xl text-sm px-6 py-3 transition-colors shadow-sm focus:ring-4 focus:ring-primary-100 w-full sm:w-auto self-end"
             >
-              Send Invite
+              Send Secure Invite
             </button>
           </div>
         </form>
