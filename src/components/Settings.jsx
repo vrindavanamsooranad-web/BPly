@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { db } from '../firebase/config';
+import { db, messaging } from '../firebase/config';
 import { doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
-import { Users, Mail, Trash2, Link as LinkIcon, AlertCircle, CheckCircle, UserPlus } from 'lucide-react';
+import { getToken } from 'firebase/messaging';
+import { Users, Mail, Trash2, Link as LinkIcon, AlertCircle, CheckCircle, UserPlus, Bell } from 'lucide-react';
 import emailjs from '@emailjs/browser';
 
 export default function Settings() {
@@ -11,6 +12,13 @@ export default function Settings() {
   const [nameInput, setNameInput] = useState('');
   const [sharedList, setSharedList] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Reminders Configuration
+  const [reminders, setReminders] = useState({
+    morning: { enabled: false, time: '08:00' },
+    evening: { enabled: false, time: '20:00' }
+  });
+  const [fcmToken, setFcmToken] = useState(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [copied, setCopied] = useState(false);
@@ -21,8 +29,11 @@ export default function Settings() {
       try {
         const docRef = doc(db, 'users', currentUser.uid);
         const docSnap = await getDoc(docRef);
-        if (docSnap.exists() && docSnap.data().sharedWith) {
-          setSharedList(docSnap.data().sharedWith);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data.sharedWith) setSharedList(data.sharedWith);
+          if (data.reminders) setReminders(data.reminders);
+          if (data.fcmToken) setFcmToken(data.fcmToken);
         }
       } catch (err) {
         console.error("Failed to fetch share list:", err);
@@ -32,6 +43,79 @@ export default function Settings() {
     }
     checkShares();
   }, [currentUser]);
+
+  const requestNotificationPermission = async () => {
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission === 'granted') {
+        // Fallback VAPID key block. In production, provide robust keys.
+        const token = await getToken(messaging, { 
+          vapidKey: 'BM6QG5b8zXZM_P6H9l-5_uA_2bWq2dO9S8Wz8s0O8Q_2I5_A_9bW0g9wV' || null
+        }).catch(err => {
+          console.warn("Generating basic token instead of VAPID secured due to config", err);
+          return getToken(messaging);
+        });
+        
+        if (token) {
+          setFcmToken(token);
+          return token;
+        }
+      } else {
+        setError("You have explicitly blocked Notifications in your browser settings. Please allow them to set clinical reminders.");
+      }
+    } catch (err) {
+      console.error('FCM Token generation failed:', err);
+    }
+    return null;
+  };
+
+  const toggleReminder = async (type) => {
+    const isCurrentlyEnabled = reminders[type].enabled;
+    let newToken = fcmToken;
+    setError('');
+    setSuccess('');
+    
+    if (!isCurrentlyEnabled && !fcmToken) {
+       newToken = await requestNotificationPermission();
+       if (!newToken) return; // Permission denied
+    }
+
+    const updatedReminders = {
+      ...reminders,
+      [type]: {
+        ...reminders[type],
+        enabled: !isCurrentlyEnabled
+      }
+    };
+    setReminders(updatedReminders);
+    
+    // Save to Firestore natively
+    try {
+      const docRef = doc(db, 'users', currentUser.uid);
+      await updateDoc(docRef, {
+         reminders: updatedReminders,
+         fcmToken: newToken || fcmToken || null
+      });
+      setSuccess(`Successfully ${!isCurrentlyEnabled ? 'enabled' : 'disabled'} your ${type} reminders!`);
+    } catch(err) {
+       console.error("Failed to commit reminder prefs:", err);
+    }
+  };
+
+  const updateTime = async (type, newTime) => {
+    const updatedReminders = {
+      ...reminders,
+      [type]: {
+        ...reminders[type],
+        time: newTime
+      }
+    };
+    setReminders(updatedReminders);
+    try {
+      const docRef = doc(db, 'users', currentUser.uid);
+      await updateDoc(docRef, { reminders: updatedReminders });
+    } catch(err) {}
+  };
 
   const handleShare = async (e) => {
     e.preventDefault();
@@ -133,6 +217,54 @@ export default function Settings() {
             <CheckCircle className="w-5 h-5 flex-shrink-0" /> {success}
           </div>
         )}
+
+        {/* Push Notification Reminders */}
+        <div className="mb-10">
+          <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-3 border-b border-slate-100 pb-4 mb-6">
+            <Bell className="w-6 h-6 text-primary-500" /> Daily Reminders
+          </h2>
+          <p className="text-slate-600 mb-6 leading-relaxed">Never miss a blood pressure check. Enable automatic setup permissions securely so your device can receive scheduled network tracking prompts dynamically.</p>
+          
+          <div className="space-y-4">
+            {/* Morning Configuration */}
+            <div className="flex flex-col sm:flex-row justify-between items-center bg-slate-50 p-6 rounded-2xl border border-slate-200 gap-4">
+               <div>
+                 <h3 className="font-bold text-slate-800">Morning Check</h3>
+                 <p className="text-sm text-slate-500 italic mt-1 bg-white inline-block px-2 py-1 rounded border border-slate-100">"Time for your morning BP check! Log it before breakfast."</p>
+               </div>
+               <div className="flex items-center gap-6 w-full sm:w-auto mt-4 sm:mt-0 justify-between">
+                 <input 
+                   type="time" 
+                   value={reminders.morning.time}
+                   onChange={e => updateTime('morning', e.target.value)}
+                   className="bg-white border text-base border-slate-300 rounded-xl px-3 py-2 font-bold focus:ring-2 outline-none focus:ring-primary-500 text-slate-700"
+                 />
+                 <button onClick={() => toggleReminder('morning')} className={`relative inline-flex h-8 w-14 shrink-0 cursor-pointer items-center justify-center rounded-full border-2 border-transparent focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors duration-200 ease-in-out ${reminders.morning.enabled ? 'bg-primary-600' : 'bg-slate-300'}`}>
+                   <span aria-hidden="true" className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${reminders.morning.enabled ? 'translate-x-3' : '-translate-x-3'}`}></span>
+                 </button>
+               </div>
+            </div>
+
+            {/* Evening Configuration */}
+            <div className="flex flex-col sm:flex-row justify-between items-center bg-slate-50 p-6 rounded-2xl border border-slate-200 gap-4">
+               <div>
+                 <h3 className="font-bold text-slate-800">Evening Check</h3>
+                 <p className="text-sm text-slate-500 italic mt-1 bg-white inline-block px-2 py-1 rounded border border-slate-100">"Time for your evening BP check! Log it before bed."</p>
+               </div>
+               <div className="flex items-center gap-6 w-full sm:w-auto mt-4 sm:mt-0 justify-between">
+                 <input 
+                   type="time" 
+                   value={reminders.evening.time}
+                   onChange={e => updateTime('evening', e.target.value)}
+                   className="bg-white border text-base border-slate-300 rounded-xl px-3 py-2 font-bold focus:ring-2 outline-none focus:ring-primary-500 text-slate-700"
+                 />
+                 <button onClick={() => toggleReminder('evening')} className={`relative inline-flex h-8 w-14 shrink-0 cursor-pointer items-center justify-center rounded-full border-2 border-transparent focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors duration-200 ease-in-out ${reminders.evening.enabled ? 'bg-primary-600' : 'bg-slate-300'}`}>
+                   <span aria-hidden="true" className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${reminders.evening.enabled ? 'translate-x-3' : '-translate-x-3'}`}></span>
+                 </button>
+               </div>
+            </div>
+          </div>
+        </div>
 
         {/* Invite Form */}
         <form onSubmit={handleShare} className="bg-slate-50 p-6 rounded-2xl border border-slate-100 mb-8">
