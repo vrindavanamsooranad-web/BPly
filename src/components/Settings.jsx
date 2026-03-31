@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { db, auth } from '../firebase/config';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { AlertCircle, CheckCircle, User, LogOut, Calendar } from 'lucide-react';
 import { differenceInYears } from 'date-fns';
@@ -46,12 +46,12 @@ export default function Settings() {
       }
 
       const docRef = doc(db, 'users', currentUser.uid);
-      await updateDoc(docRef, {
+      await setDoc(docRef, {
          name,
          gender,
          dob,
          age: calculatedAge
-      });
+      }, { merge: true });
       setSuccess('Profile successfully updated! Changes are reflected securely on your generated PDFs.');
     } catch(err) {
        setError("Failed to push profile update back to the database.");
