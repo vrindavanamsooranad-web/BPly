@@ -32,12 +32,11 @@ exports.sendScheduledReminders = onSchedule("* * * * *", async (event) => {
         snapshot.forEach((doc) => {
             const userData = doc.data();
             const token = userData.fcmToken;
-            const reminders = userData.reminders;
 
-            if (!reminders || !token) return;
+            if (!token) return;
 
             // Morning Matrix Filter
-            if (reminders.morning?.enabled && reminders.morning?.time === currentTimeStr) {
+            if (userData.morningReminderEnabled && userData.morningReminderTime === currentTimeStr) {
                 console.log(`Dispatched Morning Payload -> User ID: ${doc.id}`);
                 const payload = {
                     notification: {
@@ -50,7 +49,7 @@ exports.sendScheduledReminders = onSchedule("* * * * *", async (event) => {
             }
 
             // Evening Matrix Filter
-            if (reminders.evening?.enabled && reminders.evening?.time === currentTimeStr) {
+            if (userData.eveningReminderEnabled && userData.eveningReminderTime === currentTimeStr) {
                 console.log(`Dispatched Evening Payload -> User ID: ${doc.id}`);
                 const payload = {
                     notification: {
