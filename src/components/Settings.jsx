@@ -4,7 +4,7 @@ import { db, messaging, auth } from '../firebase/config';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { getToken } from 'firebase/messaging';
 import { signOut } from 'firebase/auth';
-import { AlertCircle, CheckCircle, Bell, User, LogOut } from 'lucide-react';
+import { AlertCircle, CheckCircle, Bell, User, LogOut, Wrench } from 'lucide-react';
 
 export default function Settings() {
   const { currentUser, userProfile } = useAuth();
@@ -44,19 +44,47 @@ export default function Settings() {
     try {
       const permission = await Notification.requestPermission();
       if (permission === 'granted') {
+        const registration = await navigator.serviceWorker.ready;
+        const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY || 'BM6QG5b8zXZM_P6H9l-5_uA_2bWq2dO9S8Wz8s0O8Q_2I5_A_9bW0g9wV';
+        
         const token = await getToken(messaging, { 
-          vapidKey: 'BM6QG5b8zXZM_P6H9l-5_uA_2bWq2dO9S8Wz8s0O8Q_2I5_A_9bW0g9wV' || null
-        }).catch(() => getToken(messaging));
+          vapidKey,
+          serviceWorkerRegistration: registration
+        }).catch((e) => {
+          console.error("Vapid Key Token Error:", e);
+          return null;
+        });
         
         if (token) {
           setFcmToken(token);
           return token;
+        } else {
+           setError('System token extraction failed. Service Worker rejected generic payload request.');
         }
       } else {
         setError("Notifications blocked natively by device browser.");
       }
-    } catch (err) {}
+    } catch (err) {
+      console.error(err);
+      setError("Native browser permission request routing failed.");
+    }
     return null;
+  };
+
+  const repairNotifications = async () => {
+    setError(''); setSuccess(''); setLoading(true);
+    let newToken = await requestNotificationPermission();
+    if (newToken) {
+       try {
+         const docRef = doc(db, 'users', currentUser.uid);
+         await updateDoc(docRef, { fcmToken: newToken });
+         setFcmToken(newToken);
+         setSuccess('Successfully generated new hardware Notification Keys directly from your Service Worker!');
+       } catch(err) {
+         setError('Generated a key, but Firebase Database refused the write packet.');
+       }
+    }
+    setLoading(false);
   };
 
   const handleToggle = async (type) => {
@@ -166,19 +194,27 @@ export default function Settings() {
 
           {activeTab === 'reminders' && (
             <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <div className="flex justify-between items-center border-b border-slate-100 pb-4 mb-6">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-100 pb-4 mb-6 gap-4">
                 <div>
                   <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-3">
                     Daily Reminders
                   </h2>
                   <p className="text-slate-500 text-sm mt-1">Configure independent alarm schedules.</p>
                 </div>
-                <button 
-                  onClick={sendTestNotification} 
-                  className="text-sm bg-primary-100 hover:bg-primary-200 text-primary-700 px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap border border-primary-200"
-                >
-                  Test Native Target
-                </button>
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={repairNotifications} 
+                    className="text-sm bg-amber-100 hover:bg-amber-200 text-amber-800 px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap border border-amber-200 flex items-center gap-1"
+                  >
+                    <Wrench className="w-4 h-4" /> Repair Notifications
+                  </button>
+                  <button 
+                    onClick={sendTestNotification} 
+                    className="text-sm bg-primary-100 hover:bg-primary-200 text-primary-700 px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap border border-primary-200"
+                  >
+                    Test Target
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-4">
