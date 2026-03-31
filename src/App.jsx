@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-ro
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { auth } from './firebase/config';
 import { signOut } from 'firebase/auth';
-import { Activity, History as HistoryIcon, LogOut, Menu, X, Settings as SettingsIcon } from 'lucide-react';
+import { Activity, History as HistoryIcon, LogOut, Menu, X, Settings as SettingsIcon, Users } from 'lucide-react';
 
 import Login from './components/Login';
 import Onboarding from './components/Onboarding';
@@ -12,6 +12,7 @@ import History from './components/History';
 import Home from './components/Home';
 import Settings from './components/Settings';
 import SharedView from './components/SharedView';
+import ShareDash from './components/ShareDash';
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -74,8 +75,11 @@ function Layout({ children }) {
                   <Link to="/history" className="text-slate-600 hover:text-blue-600 font-medium flex items-center gap-2 transition-colors">
                     <HistoryIcon className="w-4 h-4" /> History & PDF
                   </Link>
+                  <Link to="/share" className="text-slate-600 hover:text-blue-600 font-medium flex items-center gap-2 transition-colors">
+                    <Users className="w-4 h-4" /> Share
+                  </Link>
                   <Link to="/settings" className="text-slate-600 hover:text-blue-600 font-medium flex items-center gap-2 transition-colors">
-                    <SettingsIcon className="w-4 h-4" /> Sharing & Settings
+                    <SettingsIcon className="w-4 h-4" /> Settings
                   </Link>
                   <button 
                     onClick={() => signOut(auth)}
@@ -112,8 +116,11 @@ function Layout({ children }) {
                   <Link onClick={() => ReactSetMobileMenuOpen(false)} to="/history" className="w-full text-left px-3 py-3 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50 flex items-center gap-3">
                     <HistoryIcon className="w-5 h-5 text-blue-500" /> History & PDF
                   </Link>
+                  <Link onClick={() => ReactSetMobileMenuOpen(false)} to="/share" className="w-full text-left px-3 py-3 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50 flex items-center gap-3">
+                    <Users className="w-5 h-5 text-blue-500" /> Share Access
+                  </Link>
                   <Link onClick={() => ReactSetMobileMenuOpen(false)} to="/settings" className="w-full text-left px-3 py-3 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50 flex items-center gap-3">
-                    <SettingsIcon className="w-5 h-5 text-blue-500" /> Sharing & Settings
+                    <SettingsIcon className="w-5 h-5 text-blue-500" /> Settings
                   </Link>
                   <button 
                     onClick={() => { ReactSetMobileMenuOpen(false); signOut(auth); }}
@@ -148,6 +155,7 @@ function App() {
               {/* Public Routes */}
               <Route path="/" element={<Home />} />
               <Route path="/login" element={<Login />} />
+              <Route path="/shared/:userId" element={<SharedView />} />
               
               {/* Private Routes */}
               <Route path="/onboarding" element={
@@ -165,14 +173,14 @@ function App() {
                   <History />
                 </PrivateRoute>
               } />
+              <Route path="/share" element={
+                <PrivateRoute>
+                  <ShareDash />
+                </PrivateRoute>
+              } />
               <Route path="/settings" element={
                 <PrivateRoute>
                   <Settings />
-                </PrivateRoute>
-              } />
-              <Route path="/shared/:userId" element={
-                <PrivateRoute>
-                  <SharedView />
                 </PrivateRoute>
               } />
             </Routes>
