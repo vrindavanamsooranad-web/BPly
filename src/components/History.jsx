@@ -1,8 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../firebase/config';
-import { collection, query, orderBy, getDocs, doc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { Download, FileText, Calendar, Filter, Activity, Pencil, Trash2 } from 'lucide-react';
+import { Download, FileText, Calendar, Filter, Activity, Pencil, Trash2, Sun, Moon, Pill } from 'lucide-react';
 import { format, subDays, isAfter, isBefore, startOfDay, endOfDay } from 'date-fns';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -112,18 +111,29 @@ export default function History() {
       // Inject actual log registry directly using autoTable to prevent page cutoffs
       const tableBody = [];
       Object.entries(groupedLogs).forEach(([date, logs]) => {
-        // Push a group header row spanning all 5 columns
-        tableBody.push([{ content: date, colSpan: 5, styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [15, 23, 42] } }]);
+        // Push a group header row spanning all 7 columns
+        tableBody.push([{ content: date, colSpan: 7, styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [15, 23, 42] } }]);
         
         logs.forEach(log => {
           let timeStr = 'Invalid Time';
-          try { timeStr = format(new Date(log.timestamp), 'hh:mm a'); } catch(e) {}
+          let hour = 12;
+          try { 
+            const d = new Date(log.timestamp);
+            timeStr = format(d, 'hh:mm a');
+            hour = d.getHours();
+          } catch(e) {}
+          
+          let period = log.timeOfDay || (hour >= 6 && hour < 18 ? 'day' : 'night');
+          const periodStr = period === 'day' ? 'Day' : 'Night';
+          
           const isHigh = log.systolic > 140 || log.diastolic > 90;
           tableBody.push([
             timeStr,
+            periodStr,
             log.systolic.toString(),
             log.diastolic.toString(),
             log.pulse ? log.pulse.toString() : '-',
+            log.medicationContext ? `[${log.medicationContext}]` : '-',
             isHigh ? 'High BP' : '-'
           ]);
         });
@@ -131,7 +141,7 @@ export default function History() {
 
       autoTable(pdf, {
         startY: pdfHeight + 10,
-        head: [['Time', 'Systolic', 'Diastolic', 'Pulse', 'Alerts']],
+        head: [['Time', 'Period', 'Sys', 'Dia', 'Pulse', 'Medication', 'Alerts']],
         body: tableBody,
         theme: 'grid',
         headStyles: { fillColor: [30, 41, 59] }, // slate-800
@@ -140,18 +150,23 @@ export default function History() {
           if (data.section === 'body') {
             // Check if it's a data row (length > 1) rather than a group header (length 1)
             if (data.row.raw.length > 1) {
-              const isHigh = data.row.raw[4] === 'High BP';
-              if (data.column.index === 1 && isHigh) {
+              const isHigh = data.row.raw[6] === 'High BP';
+              if (data.column.index === 2 && isHigh) {
                 data.cell.styles.textColor = [185, 28, 28]; // red-700
                 data.cell.styles.fontStyle = 'bold';
               }
-              if (data.column.index === 2 && isHigh) {
+              if (data.column.index === 3 && isHigh) {
                 data.cell.styles.textColor = [29, 78, 216]; // blue-700
                 data.cell.styles.fontStyle = 'bold';
               }
-              if (data.column.index === 4 && isHigh) {
+              if (data.column.index === 6 && isHigh) {
                 data.cell.styles.textColor = [220, 38, 38]; // red-600
                 data.cell.styles.fontStyle = 'bold';
+              }
+              // Format Medication Column
+              if (data.column.index === 5 && data.row.raw[5] !== '-') {
+                 data.cell.styles.textColor = data.row.raw[5] === '[PRE]' ? [217, 119, 6] : [21, 128, 61]; // amber or green
+                 data.cell.styles.fontStyle = 'bold';
               }
             }
           }
@@ -329,10 +344,12 @@ export default function History() {
                 <thead>
                   <tr className="bg-slate-50 text-slate-600 text-sm">
                     <th className="py-3 px-6 font-medium">Time</th>
+                    <th className="py-3 px-6 font-medium text-center">Period</th>
                     <th className="py-3 px-6 font-medium text-center">Systolic</th>
                     <th className="py-3 px-6 font-medium text-center">Diastolic</th>
                     <th className="py-3 px-6 font-medium text-center">Pulse</th>
-                    <th className="py-3 px-6 font-medium">Category</th>
+                    <th className="py-3 px-6 font-medium text-center">Meds</th>
+                    <th className="py-3 px-6 font-medium text-center">Category</th>
                     <th className="py-3 px-6 font-medium text-center">Actions</th>
                   </tr>
                 </thead>
@@ -341,7 +358,7 @@ export default function History() {
                     <React.Fragment key={date}>
                       {/* Date Group Header */}
                       <tr className="bg-slate-100/80 border-y border-slate-200">
-                        <td colSpan="6" className="py-3 px-6 font-bold text-slate-800 bg-slate-100">
+                        <td colSpan="8" className="py-3 px-6 font-bold text-slate-800 bg-slate-100">
                           {date}
                         </td>
                       </tr>
@@ -350,21 +367,38 @@ export default function History() {
                         const isHigh = log.systolic > 140 || log.diastolic > 90;
                         const isOptimal = log.systolic < 120 && log.diastolic < 80;
                         
+                        let hour = 12;
+                        try { hour = new Date(log.timestamp).getHours(); } catch(e) {}
+                        let period = log.timeOfDay || (hour >= 6 && hour < 18 ? 'day' : 'night');
+                        
                         return (
                           <tr key={log.id} className={`border-b border-slate-50 last:border-0 transition-colors ${isHigh ? 'bg-red-50 hover:bg-red-100/50' : 'hover:bg-slate-50'}`}>
-                            <td className="py-4 px-6 text-slate-700 whitespace-nowrap">
+                            <td className="py-4 px-6 text-slate-700 whitespace-nowrap font-medium">
                               {(() => {
                                 try { return format(new Date(log.timestamp), 'hh:mm a'); } 
                                 catch(e) { return 'Invalid Time'; }
                               })()}
                             </td>
-                            <td className={`py-4 px-6 text-center font-bold ${isHigh ? 'text-red-700' : 'text-slate-800'}`}>{log.systolic}</td>
-                            <td className={`py-4 px-6 text-center font-bold ${isHigh ? 'text-red-700' : 'text-slate-800'}`}>{log.diastolic}</td>
-                            <td className="py-4 px-6 text-center text-slate-600 font-medium">{log.pulse || '-'}</td>
-                            <td className="py-4 px-6">
-                              <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
-                                isHigh ? 'bg-red-200 text-red-800' : 
-                                isOptimal ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
+                            <td className="py-4 px-6 text-center">
+                               {period === 'day' ? 
+                                 <span className="inline-flex items-center justify-center gap-1.5 min-w-[70px] text-xs font-bold text-amber-600 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200 shadow-sm"><Sun className="w-3.5 h-3.5"/> Day</span> : 
+                                 <span className="inline-flex items-center justify-center gap-1.5 min-w-[70px] text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-200 shadow-sm"><Moon className="w-3.5 h-3.5"/> Night</span>
+                               }
+                            </td>
+                            <td className={`py-4 px-6 text-center text-lg font-black ${isHigh ? 'text-red-700' : 'text-slate-800'}`}>{log.systolic}</td>
+                            <td className={`py-4 px-6 text-center text-lg font-black ${isHigh ? 'text-red-700' : 'text-slate-800'}`}>{log.diastolic}</td>
+                            <td className="py-4 px-6 text-center text-slate-600 font-bold">{log.pulse || '-'}</td>
+                            <td className="py-4 px-6 text-center">
+                               {log.medicationContext ? (
+                                  <span className={`inline-flex items-center justify-center gap-1.5 min-w-[75px] text-[11px] uppercase tracking-wide font-black px-2.5 py-1 rounded-full border ${log.medicationContext === 'PRE' ? 'text-amber-700 bg-amber-50 border-amber-200 shadow-sm' : 'text-emerald-700 bg-emerald-50 border-emerald-200 shadow-sm'}`}>
+                                    <Pill className="w-3 h-3"/> {log.medicationContext}
+                                  </span>
+                               ) : <span className="text-slate-300 font-bold">—</span>}
+                            </td>
+                            <td className="py-4 px-6 text-center">
+                              <span className={`px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap ${
+                                isHigh ? 'bg-red-200 text-red-800 shadow-sm' : 
+                                isOptimal ? 'bg-green-100 text-green-700 shadow-sm' : 'bg-blue-100 text-blue-700 shadow-sm'
                               }`}>
                                 {isHigh ? 'High (Stage 2+)' : isOptimal ? 'Optimal' : 'Elevated / Stage 1'}
                               </span>

@@ -1,312 +1,164 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { db, messaging, auth } from '../firebase/config';
+import { db, auth } from '../firebase/config';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { getToken } from 'firebase/messaging';
 import { signOut } from 'firebase/auth';
-import { AlertCircle, CheckCircle, Bell, User, LogOut, Wrench } from 'lucide-react';
+import { AlertCircle, CheckCircle, User, LogOut, Calendar } from 'lucide-react';
+import { differenceInYears } from 'date-fns';
 
 export default function Settings() {
-  const { currentUser, userProfile } = useAuth();
-  const [activeTab, setActiveTab] = useState('reminders');
+  const { currentUser } = useAuth();
   const [loading, setLoading] = useState(true);
 
-  // Independent Notifications Tracking
-  const [morningReminderTime, setMorningReminderTime] = useState('08:00');
-  const [morningReminderEnabled, setMorningReminderEnabled] = useState(false);
-  const [eveningReminderTime, setEveningReminderTime] = useState('20:00');
-  const [eveningReminderEnabled, setEveningReminderEnabled] = useState(false);
-
-  const [fcmToken, setFcmToken] = useState(null);
+  // Profile Form States
+  const [name, setName] = useState('');
+  const [gender, setGender] = useState('');
+  const [dob, setDob] = useState('');
+  
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
   useEffect(() => {
-    async function fetchSettings() {
+    async function fetchProfile() {
       if (!currentUser) return;
       try {
         const docRef = doc(db, 'users', currentUser.uid);
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const data = docSnap.data();
-          if (data.morningReminderTime) setMorningReminderTime(data.morningReminderTime);
-          if (data.morningReminderEnabled !== undefined) setMorningReminderEnabled(data.morningReminderEnabled);
-          if (data.eveningReminderTime) setEveningReminderTime(data.eveningReminderTime);
-          if (data.eveningReminderEnabled !== undefined) setEveningReminderEnabled(data.eveningReminderEnabled);
-          if (data.fcmToken) setFcmToken(data.fcmToken);
+          if (data.name) setName(data.name);
+          if (data.gender) setGender(data.gender);
+          if (data.dob) setDob(data.dob);
         }
       } catch (err) {} finally { setLoading(false); }
     }
-    fetchSettings();
+    fetchProfile();
   }, [currentUser]);
 
-  const requestNotificationPermission = async () => {
-    try {
-      const permission = await Notification.requestPermission();
-      if (permission === 'granted') {
-        const registration = await navigator.serviceWorker.ready;
-        const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY || 'BM6QG5b8zXZM_P6H9l-5_uA_2bWq2dO9S8Wz8s0O8Q_2I5_A_9bW0g9wV';
-        
-        const token = await getToken(messaging, { 
-          vapidKey,
-          serviceWorkerRegistration: registration
-        }).catch((e) => {
-          console.error("Vapid Key Token Error:", e);
-          return null;
-        });
-        
-        if (token) {
-          setFcmToken(token);
-          return token;
-        } else {
-           setError('System token extraction failed. Service Worker rejected generic payload request.');
-        }
-      } else {
-        setError("Notifications blocked natively by device browser.");
-      }
-    } catch (err) {
-      console.error(err);
-      setError("Native browser permission request routing failed.");
-    }
-    return null;
-  };
-
-  const repairNotifications = async () => {
-    setError(''); setSuccess(''); setLoading(true);
-    let newToken = await requestNotificationPermission();
-    if (newToken) {
-       try {
-         const docRef = doc(db, 'users', currentUser.uid);
-         await updateDoc(docRef, { fcmToken: newToken });
-         setFcmToken(newToken);
-         setSuccess('Successfully generated new hardware Notification Keys directly from your Service Worker!');
-       } catch(err) {
-         setError('Generated a key, but Firebase Database refused the write packet.');
-       }
-    }
-    setLoading(false);
-  };
-
-  const handleToggle = async (type) => {
+  const handleUpdateProfile = async (e) => {
+    e.preventDefault();
     setError(''); setSuccess('');
-    
-    let currentEnabled = type === 'morning' ? morningReminderEnabled : eveningReminderEnabled;
-    let newEnabled = !currentEnabled;
-
-    // Immediately reflect state change visually in the DOM Checkbox
-    if (type === 'morning') {
-      setMorningReminderEnabled(newEnabled);
-    } else {
-      setEveningReminderEnabled(newEnabled);
-    }
-
-    let newToken = fcmToken;
-    let hasTokenError = false;
-
-    // Only attempt hardware extraction if we genuinely don't have a token tracked locally
-    if (newEnabled && !fcmToken) {
-       if (Notification.permission !== 'granted') {
-         newToken = await requestNotificationPermission();
-         if (!newToken) hasTokenError = true;
-       }
-    }
-    
     try {
+      // Calculate age natively via date-fns
+      let calculatedAge = null;
+      if (dob) {
+         calculatedAge = differenceInYears(new Date(), new Date(dob));
+      }
+
       const docRef = doc(db, 'users', currentUser.uid);
       await updateDoc(docRef, {
-         [type === 'morning' ? 'morningReminderEnabled' : 'eveningReminderEnabled']: newEnabled,
-         [type === 'morning' ? 'morningReminderTime' : 'eveningReminderTime']: type === 'morning' ? morningReminderTime : eveningReminderTime,
-         fcmToken: newToken || fcmToken || null
+         name,
+         gender,
+         dob,
+         age: calculatedAge
       });
-      
-      // We drop success payloads strictly if we successfully reached the database, masking background SW issues if permission granted
-      if (!hasTokenError || Notification.permission === 'granted') {
-         setSuccess(`Independently routed ${type} toggle state to ${newEnabled ? 'On' : 'Off'}!`);
-      } else {
-         setError("Toggled successfully, but browser strictly blocked internal Service Worker token extraction.");
-      }
+      setSuccess('Profile successfully updated! Changes are reflected securely on your generated PDFs.');
     } catch(err) {
-       setError("Failed to route token payload locally to Firebase.");
-       // Revert UI on critical network database failure
-       if (type === 'morning') setMorningReminderEnabled(currentEnabled);
-       else setEveningReminderEnabled(currentEnabled);
-    }
-  };
-
-  const updateTime = async (type, newTime) => {
-    if (type === 'morning') {
-      setMorningReminderTime(newTime);
-    } else {
-      setEveningReminderTime(newTime);
-    }
-
-    try {
-      const docRef = doc(db, 'users', currentUser.uid);
-      await updateDoc(docRef, { 
-        [type === 'morning' ? 'morningReminderTime' : 'eveningReminderTime']: newTime 
-      });
-    } catch(err) {}
-  };
-
-  const sendTestNotification = async () => {
-    if ('Notification' in window && Notification.permission === 'granted') {
-      const registration = await navigator.serviceWorker.getRegistration();
-      if (registration) {
-         registration.showNotification('BPly Testing Engine', {
-           body: 'Success! Your Service Worker correctly received this native trigger.',
-           icon: '/favicon.svg'
-         });
-      } else {
-        new Notification('BPly Test Reminder', {
-          body: 'Success! Device payload triggered natively.',
-          icon: '/favicon.svg'
-        });
-      }
-    } else {
-      alert('You must enable a Notification Switch below so the device securely pulls keys automatically!');
+       setError("Failed to push profile update back to the database.");
     }
   };
 
   if (loading) return <div className="text-center py-12 text-slate-500">Loading Configuration...</div>;
 
   return (
-    <div className="max-w-2xl mx-auto space-y-8 pb-12">
+    <div className="max-w-xl mx-auto space-y-8 pb-12">
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
         
-        {/* Tab Navigation */}
-        <div className="flex border-b border-slate-200 bg-slate-50 overflow-x-auto">
+        {/* Header */}
+        <div className="p-6 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <User className="w-6 h-6 text-primary-600" />
+            <h2 className="text-xl font-bold text-slate-800">Account Profile</h2>
+          </div>
           <button 
-            onClick={() => setActiveTab('reminders')}
-            className={`flex-1 py-4 px-6 text-sm font-semibold whitespace-nowrap flex items-center justify-center gap-2 transition-colors focus:outline-none ${activeTab === 'reminders' ? 'text-primary-600 bg-white border-b-2 border-primary-600' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}
+            type="button"
+            onClick={() => signOut(auth)}
+            className="flex items-center gap-2 text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg font-medium transition-colors border border-red-100/50 text-sm"
           >
-            <Bell className="w-4 h-4" /> Reminders
-          </button>
-          <button 
-            onClick={() => setActiveTab('account')}
-            className={`flex-1 py-4 px-6 text-sm font-semibold whitespace-nowrap flex items-center justify-center gap-2 transition-colors focus:outline-none ${activeTab === 'account' ? 'text-primary-600 bg-white border-b-2 border-primary-600' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}
-          >
-            <User className="w-4 h-4" /> Account
+            <LogOut className="w-4 h-4" /> Sign Out
           </button>
         </div>
 
-        {/* Tab Content Body */}
+        {/* Form Body */}
         <div className="p-6 sm:p-8">
           
           {error && (
             <div className="mb-6 p-4 bg-red-50 text-red-700 rounded-xl flex items-center gap-3 border border-red-100 animate-in fade-in">
-              <AlertCircle className="w-5 h-5 flex-shrink-0" /> {error}
+               <AlertCircle className="w-5 h-5 flex-shrink-0" /> {error}
             </div>
           )}
           
           {success && (
             <div className="mb-6 p-4 bg-green-50 text-green-700 rounded-xl flex items-center gap-3 border border-green-100 animate-in fade-in">
-              <CheckCircle className="w-5 h-5 flex-shrink-0" /> {success}
+               <CheckCircle className="w-5 h-5 flex-shrink-0" /> {success}
             </div>
           )}
 
-          {activeTab === 'reminders' && (
-            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-100 pb-4 mb-6 gap-4">
-                <div>
-                  <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-3">
-                    Daily Reminders
-                  </h2>
-                  <p className="text-slate-500 text-sm mt-1">Configure independent alarm schedules.</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button 
-                    onClick={repairNotifications} 
-                    className="text-sm bg-amber-100 hover:bg-amber-200 text-amber-800 px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap border border-amber-200 flex items-center gap-1"
-                  >
-                    <Wrench className="w-4 h-4" /> Repair Notifications
-                  </button>
-                  <button 
-                    onClick={sendTestNotification} 
-                    className="text-sm bg-primary-100 hover:bg-primary-200 text-primary-700 px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap border border-primary-200"
-                  >
-                    Test Target
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                {/* Morning Configuration */}
-                <div className="flex flex-col sm:flex-row justify-between items-center bg-slate-50 p-5 rounded-2xl border border-slate-200 gap-4">
-                   <div>
-                     <h3 className="font-bold text-slate-800">Morning Check</h3>
-                   </div>
-                   <div className="flex items-center gap-4 w-full sm:w-auto mt-4 sm:mt-0 justify-between">
-                     <input 
-                       type="time" 
-                       value={morningReminderTime}
-                       onChange={e => updateTime('morning', e.target.value)}
-                       className="bg-white border text-base border-slate-300 rounded-xl px-3 py-2 font-bold focus:ring-2 outline-none focus:ring-primary-500 text-slate-700"
-                     />
-                     <label className="relative inline-flex items-center cursor-pointer">
-                       <input 
-                         type="checkbox" 
-                         className="sr-only peer"
-                         checked={!!morningReminderEnabled}
-                         onChange={() => handleToggle('morning')}
-                       />
-                       <div className="w-14 h-8 bg-slate-300 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary-500 peer-focus:ring-offset-2 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-primary-600"></div>
-                     </label>
-                   </div>
-                </div>
-
-                {/* Evening Configuration */}
-                <div className="flex flex-col sm:flex-row justify-between items-center bg-slate-50 p-5 rounded-2xl border border-slate-200 gap-4">
-                   <div>
-                     <h3 className="font-bold text-slate-800">Evening Check</h3>
-                   </div>
-                   <div className="flex items-center gap-4 w-full sm:w-auto mt-4 sm:mt-0 justify-between">
-                     <input 
-                       type="time" 
-                       value={eveningReminderTime}
-                       onChange={e => updateTime('evening', e.target.value)}
-                       className="bg-white border text-base border-slate-300 rounded-xl px-3 py-2 font-bold focus:ring-2 outline-none focus:ring-primary-500 text-slate-700"
-                     />
-                     <label className="relative inline-flex items-center cursor-pointer">
-                       <input 
-                         type="checkbox" 
-                         className="sr-only peer"
-                         checked={!!eveningReminderEnabled}
-                         onChange={() => handleToggle('evening')}
-                       />
-                       <div className="w-14 h-8 bg-slate-300 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary-500 peer-focus:ring-offset-2 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-primary-600"></div>
-                     </label>
-                   </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'account' && (
-             <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-               <div className="border-b border-slate-100 pb-4 mb-6">
-                 <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-3">
-                   Profile Settings
-                 </h2>
-               </div>
-               <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 mb-8 flex flex-col sm:flex-row gap-6 items-center sm:items-start text-center sm:text-left">
-                 <div className="w-20 h-20 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-bold text-2xl flex-shrink-0 shadow-inner">
-                   {userProfile?.name?.charAt(0) || currentUser?.email?.charAt(0) || 'U'}
+          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <form onSubmit={handleUpdateProfile} className="space-y-6">
+                 
+                 <div className="w-20 h-20 rounded-full bg-primary-100 flex mx-auto items-center justify-center text-primary-700 font-bold text-3xl shadow-inner uppercase mb-4">
+                   {name?.charAt(0) || currentUser?.email?.charAt(0) || 'U'}
                  </div>
-                 <div className="flex-1 space-y-1">
-                   <h3 className="text-xl font-bold text-slate-800">{userProfile?.name || 'Anonymous User'}</h3>
-                   <p className="text-slate-500">{currentUser?.email}</p>
+                 <div className="text-center mb-8 pb-6 border-b border-slate-100">
+                   <p className="text-slate-500 font-medium">{currentUser?.email}</p>
                  </div>
-               </div>
-               <div className="pt-4">
+                 
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-8">
+                   <div className="space-y-1.5 text-left md:col-span-2">
+                     <label className="text-sm font-bold text-slate-700 px-1">Full Name</label>
+                     <input 
+                       type="text" 
+                       value={name}
+                       onChange={(e) => setName(e.target.value)}
+                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 focus:bg-white focus:ring-2 focus:ring-primary-500 outline-none transition-all placeholder:text-slate-300 font-medium"
+                       placeholder="Enter Name To Print on Report"
+                     />
+                   </div>
+                   <div className="space-y-1.5 text-left">
+                     <label className="text-sm font-bold text-slate-700 px-1">Biological Sex / Gender</label>
+                     <select 
+                       value={gender}
+                       onChange={(e) => setGender(e.target.value)}
+                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 focus:bg-white focus:ring-2 focus:ring-primary-500 outline-none transition-all text-slate-700 font-medium"
+                     >
+                       <option value="">Select Identity...</option>
+                       <option value="Female">Female</option>
+                       <option value="Male">Male</option>
+                       <option value="Other">Other</option>
+                       <option value="Prefer Not to Say">Prefer Not to Say</option>
+                     </select>
+                   </div>
+                   <div className="space-y-1.5 text-left">
+                     <div className="flex justify-between items-center px-1">
+                       <label className="text-sm font-bold text-slate-700">Date of Birth</label>
+                       {dob && <span className="text-xs font-black text-primary-600 bg-primary-50 px-2 py-0.5 rounded shadow-sm border border-primary-100">Age: {differenceInYears(new Date(), new Date(dob))}</span>}
+                     </div>
+                     <div className="relative">
+                       <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                         <Calendar className="h-[18px] w-[18px] text-slate-400" />
+                       </div>
+                       <input 
+                         type="date" 
+                         value={dob}
+                         max={new Date().toISOString().split("T")[0]}
+                         onChange={(e) => setDob(e.target.value)}
+                         className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-11 px-4 py-3.5 focus:bg-white focus:ring-2 focus:ring-primary-500 outline-none transition-all text-slate-700 font-medium tracking-wide"
+                       />
+                     </div>
+                   </div>
+                 </div>
+               
+               <div className="pt-6">
                   <button 
-                    onClick={() => signOut(auth)}
-                    className="flex items-center gap-2 text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-5 py-3 rounded-xl font-medium transition-colors w-full sm:w-auto justify-center"
+                    type="submit"
+                    className="w-full bg-slate-800 hover:bg-slate-900 border border-slate-900 hover:border-slate-800 text-white px-5 py-4 rounded-xl font-bold text-lg transition-all flex justify-center shadow-lg hover:shadow-xl shadow-slate-900/10"
                   >
-                    <LogOut className="w-5 h-5" /> Terminate Session
+                    Save Context Parameters
                   </button>
                </div>
-             </div>
-          )}
+            </form>
+          </div>
 
         </div>
       </div>
