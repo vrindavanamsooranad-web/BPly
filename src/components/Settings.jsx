@@ -1,227 +1,126 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { db } from '../firebase/config';
-import { doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
-import { Users, Mail, Trash2, Link as LinkIcon, AlertCircle, CheckCircle, UserPlus } from 'lucide-react';
-import emailjs from '@emailjs/browser';
+import { db, auth } from '../firebase/config';
+import { doc, getDoc } from 'firebase/firestore';
+import { signOut } from 'firebase/auth';
+import { User, Mail, Calendar, LogOut, ShieldCheck } from 'lucide-react';
+import { differenceInYears } from 'date-fns';
+
+function ProfileField({ icon: Icon, label, value }) {
+  return (
+    <div className="flex items-start gap-4 py-4 border-b border-slate-100 last:border-0">
+      <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+        <Icon className="w-4 h-4 text-slate-500" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-0.5">{label}</p>
+        <p className="text-base font-semibold text-slate-800 truncate">{value || <span className="text-slate-300 font-normal italic">Not set</span>}</p>
+      </div>
+    </div>
+  );
+}
 
 export default function Settings() {
-  const { currentUser, userProfile, setUserProfile } = useAuth();
-  const [emailInput, setEmailInput] = useState('');
-  const [nameInput, setNameInput] = useState('');
-  const [sharedList, setSharedList] = useState([]);
+  const { currentUser, userProfile } = useAuth();
+  const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    async function checkShares() {
+    async function fetchProfile() {
       if (!currentUser) return;
       try {
         const docRef = doc(db, 'users', currentUser.uid);
         const docSnap = await getDoc(docRef);
-        if (docSnap.exists() && docSnap.data().sharedWith) {
-          setSharedList(docSnap.data().sharedWith);
+        if (docSnap.exists()) {
+          setProfile(docSnap.data());
+        } else {
+          // Fall back to whatever the AuthContext already loaded
+          setProfile(userProfile);
         }
       } catch (err) {
-        console.error("Failed to fetch share list:", err);
+        console.error('Error loading profile:', err);
+        setProfile(userProfile);
       } finally {
         setLoading(false);
       }
     }
-    checkShares();
-  }, [currentUser]);
+    fetchProfile();
+  }, [currentUser, userProfile]);
 
-  const handleShare = async (e) => {
-    e.preventDefault();
-    if (!emailInput || !emailInput.includes('@')) {
-      setError("Please enter a valid email address.");
-      return;
-    }
-    if (sharedList.includes(emailInput.toLowerCase())) {
-      setError("This user is already on your access list.");
-      return;
-    }
-    
-    setError('');
-    setSuccess('');
-    
+  if (loading) {
+    return (
+      <div className="max-w-lg mx-auto pt-8">
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 text-center text-slate-400">
+          Loading profile...
+        </div>
+      </div>
+    );
+  }
+
+  // Calculate age live from DOB
+  let age = profile?.age ?? null;
+  if (profile?.dob) {
     try {
-      const email = emailInput.toLowerCase();
-      const docRef = doc(db, 'users', currentUser.uid);
-      await updateDoc(docRef, {
-        sharedWith: arrayUnion(email)
-      });
-      
-      setSharedList([...sharedList, email]);
-      // Update global context cache loosely to stay in sync
-      if (userProfile) setUserProfile({ ...userProfile, sharedWith: [...(userProfile.sharedWith || []), email] });
-      
-      // Trigger EmailJS Invitation
-      try {
-        await emailjs.send(
-          'service_56iqe9k', 
-          'template_247grif', 
-          {
-            family_name: nameInput || 'Family Member',
-            family_email: email,
-            user_name: userProfile?.name || 'A BPly User',
-            user_id: currentUser.uid
-          }, 
-          'YNVv0rI2soZaNdWx3'
-        );
-      } catch (emailErr) {
-        console.error("EmailJS sending error:", emailErr);
-        // We do not fail the whole operation if email visually fails
-      }
+      age = differenceInYears(new Date(), new Date(profile.dob));
+    } catch (e) { /* keep stored age */ }
+  }
 
-      setSuccess(`Successfully granted viewer access and sent invite email to ${email}!`);
-      setEmailInput('');
-      setNameInput('');
-    } catch (err) {
-      console.error(err);
-      setError("Failed to share profile. Please try again.");
-    }
-  };
-
-  const handleRemove = async (emailToRemove) => {
-    if (!window.confirm(`Are you sure you want to revoke access from ${emailToRemove}?`)) return;
+  // Format DOB nicely
+  let dobDisplay = profile?.dob ?? null;
+  if (dobDisplay) {
     try {
-      const docRef = doc(db, 'users', currentUser.uid);
-      await updateDoc(docRef, {
-        sharedWith: arrayRemove(emailToRemove)
+      dobDisplay = new Date(dobDisplay).toLocaleDateString('en-IN', {
+        day: 'numeric', month: 'long', year: 'numeric'
       });
-      setSharedList(sharedList.filter(e => e !== emailToRemove));
-      if (userProfile) setUserProfile({ ...userProfile, sharedWith: sharedList.filter(e => e !== emailToRemove) });
-    } catch (err) {
-      console.error(err);
-      alert("Failed to remove viewer. Please try again.");
-    }
-  };
+    } catch (e) { /* keep raw */ }
+  }
 
-  const sharedLink = `${window.location.origin}/shared/${currentUser?.uid}`;
-
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(sharedLink);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 3000);
-  };
-
-  if (loading) return <div className="text-center py-12 text-slate-500">Loading settings...</div>;
+  const initials = profile?.name
+    ? profile.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+    : currentUser?.email?.[0]?.toUpperCase() ?? 'U';
 
   return (
-    <div className="max-w-2xl mx-auto space-y-8 pb-12">
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8">
-        <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-3 border-b border-slate-100 pb-4 mb-6">
-          <Users className="w-6 h-6 text-primary-500" />
-          Family Sharing & Doctors
-        </h2>
-        
-        <p className="text-slate-600 mb-8 leading-relaxed">
-          Securely grant family members or doctors read-only access to your BPly dashboard. They will be able to view your heart rate history and generated PDF charts, but they will never be able to edit or delete your data.
-        </p>
+    <div className="max-w-lg mx-auto pb-12">
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
 
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 text-red-700 rounded-xl flex items-center gap-3 border border-red-100">
-            <AlertCircle className="w-5 h-5 flex-shrink-0" /> {error}
+        {/* Header banner */}
+        <div className="bg-gradient-to-r from-slate-800 to-slate-700 px-6 py-8 text-white text-center relative">
+          <div className="w-20 h-20 rounded-full bg-white/20 border-2 border-white/40 flex items-center justify-center mx-auto mb-3 text-2xl font-black tracking-tight">
+            {initials}
           </div>
-        )}
-        
-        {success && (
-          <div className="mb-6 p-4 bg-green-50 text-green-700 rounded-xl flex items-center gap-3 border border-green-100">
-            <CheckCircle className="w-5 h-5 flex-shrink-0" /> {success}
-          </div>
-        )}
+          <h1 className="text-xl font-bold">{profile?.name || 'Your Profile'}</h1>
+          <p className="text-slate-300 text-sm mt-0.5">{currentUser?.email}</p>
+          {age !== null && (
+            <span className="inline-block mt-2 text-xs font-bold bg-white/20 px-3 py-1 rounded-full">
+              Age {age} · {profile?.gender || 'N/A'}
+            </span>
+          )}
+        </div>
 
-        {/* Invite Form */}
-        <form onSubmit={handleShare} className="bg-slate-50 p-6 rounded-2xl border border-slate-100 mb-8">
-          <h3 className="text-sm font-semibold text-slate-800 uppercase tracking-wider mb-4">Grant Viewer Access & Email Invite</h3>
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col sm:flex-row gap-4">
-              <div className="relative flex-1">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <UserPlus className="h-5 w-5 text-slate-400" />
-                </div>
-                <input
-                  type="text"
-                  value={nameInput}
-                  onChange={(e) => setNameInput(e.target.value)}
-                  className="pl-10 w-full bg-white border border-slate-300 text-slate-900 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 block p-3 px-4 shadow-sm"
-                  placeholder="Guest Name (e.g., Dr. Smith)"
-                  required
-                />
-              </div>
-              <div className="relative flex-1">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Mail className="h-5 w-5 text-slate-400" />
-                </div>
-                <input
-                  type="email"
-                  value={emailInput}
-                  onChange={(e) => setEmailInput(e.target.value)}
-                  className="pl-10 w-full bg-white border border-slate-300 text-slate-900 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 block p-3 px-4 shadow-sm"
-                  placeholder="doctor@clinic.com"
-                  required
-                />
-              </div>
-            </div>
-            <button 
-              type="submit" 
-              className="text-white bg-primary-600 hover:bg-primary-700 font-medium rounded-xl text-sm px-6 py-3 transition-colors shadow-sm focus:ring-4 focus:ring-primary-100 w-full sm:w-auto self-end"
-            >
-              Send Secure Invite
-            </button>
-          </div>
-        </form>
+        {/* Fields */}
+        <div className="px-6 py-2">
+          <ProfileField icon={User}       label="Full Name"      value={profile?.name} />
+          <ProfileField icon={Mail}       label="Email Address"  value={currentUser?.email} />
+          <ProfileField icon={Calendar}   label="Date of Birth"  value={dobDisplay} />
+          <ProfileField icon={ShieldCheck} label="Gender"        value={profile?.gender} />
+          <ProfileField icon={User}       label="Age"            value={age !== null ? `${age} years old` : null} />
+        </div>
 
-        {/* Active Viewers List */}
-        <h3 className="text-sm font-semibold text-slate-800 uppercase tracking-wider mb-4">Currently Shared With</h3>
-        {sharedList.length === 0 ? (
-          <div className="text-slate-500 text-center py-6 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-            No active viewers. Your data is entirely private.
-          </div>
-        ) : (
-          <ul className="space-y-3 mb-8">
-            {sharedList.map((email, index) => (
-              <li key={index} className="flex justify-between items-center p-4 bg-white border border-slate-200 rounded-xl shadow-sm hover:border-slate-300 transition-colors">
-                <div className="flex items-center gap-3 overflow-hidden">
-                  <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-bold uppercase flex-shrink-0 text-sm">
-                    {email.charAt(0)}
-                  </div>
-                  <span className="text-slate-700 font-medium truncate">{email}</span>
-                </div>
-                <button 
-                  onClick={() => handleRemove(email)}
-                  className="text-slate-400 hover:text-red-600 transition-colors p-2 rounded-lg hover:bg-red-50 flex-shrink-0"
-                  title="Revoke Access"
-                >
-                  <Trash2 className="w-5 h-5" />
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+        {/* Info notice */}
+        <div className="mx-6 mb-4 mt-2 px-4 py-3 bg-blue-50 rounded-xl border border-blue-100 text-xs text-blue-600 font-medium">
+          Profile details are set during initial onboarding. Contact support to update your information.
+        </div>
 
-        {/* Direct Link Sharing Box */}
-        {sharedList.length > 0 && (
-          <div className="mt-10 border-t border-slate-100 pt-8">
-             <h3 className="text-sm font-semibold text-slate-800 uppercase tracking-wider mb-4">Your Private Share Link</h3>
-             <p className="text-sm text-slate-500 mb-4">Copy and instantly send this exact URL to your authorized viewers:</p>
-             <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-xl gap-4 overflow-hidden">
-                <div className="flex items-center gap-2 overflow-hidden text-slate-600">
-                  <LinkIcon className="w-5 h-5 flex-shrink-0" />
-                  <span className="truncate text-sm font-mono">{sharedLink}</span>
-                </div>
-                <button 
-                  onClick={copyToClipboard}
-                  className="text-primary-600 hover:text-primary-800 font-bold text-sm whitespace-nowrap bg-primary-50 px-3 py-1.5 rounded-lg transition-colors"
-                >
-                  {copied ? 'Copied!' : 'Copy Link'}
-                </button>
-             </div>
-          </div>
-        )}
+        {/* Sign Out */}
+        <div className="px-6 pb-6">
+          <button
+            onClick={() => signOut(auth)}
+            className="w-full flex items-center justify-center gap-2 bg-white border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 font-semibold py-3 rounded-xl transition-all text-sm"
+          >
+            <LogOut className="w-4 h-4" /> Sign Out
+          </button>
+        </div>
+
       </div>
     </div>
   );
