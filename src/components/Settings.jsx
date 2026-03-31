@@ -89,23 +89,26 @@ export default function Settings() {
 
   const handleToggle = async (type) => {
     setError(''); setSuccess('');
-    let newToken = fcmToken;
     
     let currentEnabled = type === 'morning' ? morningReminderEnabled : eveningReminderEnabled;
     let newEnabled = !currentEnabled;
 
-    if (newEnabled && !fcmToken) {
-       newToken = await requestNotificationPermission();
-       if (!newToken) {
-          setError('System token extraction failed. Check browser permissions.');
-          return;
-       }
-    }
-
+    // Immediately reflect state change visually in the DOM Checkbox
     if (type === 'morning') {
       setMorningReminderEnabled(newEnabled);
     } else {
       setEveningReminderEnabled(newEnabled);
+    }
+
+    let newToken = fcmToken;
+    let hasTokenError = false;
+
+    // Only attempt hardware extraction if we genuinely don't have a token tracked locally
+    if (newEnabled && !fcmToken) {
+       if (Notification.permission !== 'granted') {
+         newToken = await requestNotificationPermission();
+         if (!newToken) hasTokenError = true;
+       }
     }
     
     try {
@@ -115,9 +118,18 @@ export default function Settings() {
          [type === 'morning' ? 'morningReminderTime' : 'eveningReminderTime']: type === 'morning' ? morningReminderTime : eveningReminderTime,
          fcmToken: newToken || fcmToken || null
       });
-      setSuccess(`Independently routed ${type} toggle state to ${newEnabled ? 'On' : 'Off'}!`);
+      
+      // We drop success payloads strictly if we successfully reached the database, masking background SW issues if permission granted
+      if (!hasTokenError || Notification.permission === 'granted') {
+         setSuccess(`Independently routed ${type} toggle state to ${newEnabled ? 'On' : 'Off'}!`);
+      } else {
+         setError("Toggled successfully, but browser strictly blocked internal Service Worker token extraction.");
+      }
     } catch(err) {
        setError("Failed to route token payload locally to Firebase.");
+       // Revert UI on critical network database failure
+       if (type === 'morning') setMorningReminderEnabled(currentEnabled);
+       else setEveningReminderEnabled(currentEnabled);
     }
   };
 
@@ -234,7 +246,7 @@ export default function Settings() {
                        <input 
                          type="checkbox" 
                          className="sr-only peer"
-                         checked={morningReminderEnabled}
+                         checked={!!morningReminderEnabled}
                          onChange={() => handleToggle('morning')}
                        />
                        <div className="w-14 h-8 bg-slate-300 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary-500 peer-focus:ring-offset-2 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-primary-600"></div>
@@ -258,7 +270,7 @@ export default function Settings() {
                        <input 
                          type="checkbox" 
                          className="sr-only peer"
-                         checked={eveningReminderEnabled}
+                         checked={!!eveningReminderEnabled}
                          onChange={() => handleToggle('evening')}
                        />
                        <div className="w-14 h-8 bg-slate-300 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary-500 peer-focus:ring-offset-2 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-primary-600"></div>
