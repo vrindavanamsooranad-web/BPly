@@ -194,9 +194,15 @@ export default function Settings() {
                        onChange={e => updateTime('morning', e.target.value)}
                        className="bg-white border text-base border-slate-300 rounded-xl px-3 py-2 font-bold focus:ring-2 outline-none focus:ring-primary-500 text-slate-700"
                      />
-                     <button onClick={() => handleToggle('morning')} className={`relative inline-flex h-8 w-14 shrink-0 cursor-pointer items-center justify-center rounded-full border-2 border-transparent focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors duration-200 ease-in-out ${morningReminderEnabled ? 'bg-primary-600' : 'bg-slate-300'}`}>
-                       <span aria-hidden="true" className={`pointer-events-none inline-block h-6 w-6 transform rounded-full shadow ring-0 transition duration-200 ease-in-out ${morningReminderEnabled ? 'translate-x-3 bg-white' : '-translate-x-3 bg-white'}`}></span>
-                     </button>
+                     <label className="relative inline-flex items-center cursor-pointer">
+                       <input 
+                         type="checkbox" 
+                         className="sr-only peer"
+                         checked={morningReminderEnabled}
+                         onChange={() => handleToggle('morning')}
+                       />
+                       <div className="w-14 h-8 bg-slate-300 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary-500 peer-focus:ring-offset-2 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-primary-600"></div>
+                     </label>
                    </div>
                 </div>
 
@@ -212,9 +218,15 @@ export default function Settings() {
                        onChange={e => updateTime('evening', e.target.value)}
                        className="bg-white border text-base border-slate-300 rounded-xl px-3 py-2 font-bold focus:ring-2 outline-none focus:ring-primary-500 text-slate-700"
                      />
-                     <button onClick={() => handleToggle('evening')} className={`relative inline-flex h-8 w-14 shrink-0 cursor-pointer items-center justify-center rounded-full border-2 border-transparent focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors duration-200 ease-in-out ${eveningReminderEnabled ? 'bg-primary-600' : 'bg-slate-300'}`}>
-                       <span aria-hidden="true" className={`pointer-events-none inline-block h-6 w-6 transform rounded-full shadow ring-0 transition duration-200 ease-in-out ${eveningReminderEnabled ? 'translate-x-3 bg-white' : '-translate-x-3 bg-white'}`}></span>
-                     </button>
+                     <label className="relative inline-flex items-center cursor-pointer">
+                       <input 
+                         type="checkbox" 
+                         className="sr-only peer"
+                         checked={eveningReminderEnabled}
+                         onChange={() => handleToggle('evening')}
+                       />
+                       <div className="w-14 h-8 bg-slate-300 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary-500 peer-focus:ring-offset-2 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-primary-600"></div>
+                     </label>
                    </div>
                 </div>
               </div>
