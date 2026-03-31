@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../firebase/config';
 import { collection, addDoc } from 'firebase/firestore';
-import { Activity, Pill, Sun, Moon, ChevronRight, ChevronDown } from 'lucide-react';
+import { Activity } from 'lucide-react';
 
 export default function Dashboard() {
   const { currentUser, userProfile } = useAuth();
@@ -13,10 +13,6 @@ export default function Dashboard() {
   const [dateTime, setDateTime] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
-  
-  // Advanced Context Toggles
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [medContext, setMedContext] = useState(''); // 'PRE', 'POST', or ''
 
   // Set default datetime to local time (YYYY-MM-DDThh:mm)
   useEffect(() => {
@@ -34,24 +30,15 @@ export default function Dashboard() {
     
     try {
       const logsRef = collection(db, `users/${currentUser.uid}/logs`);
-      const targetDate = new Date(dateTime);
-      
-      const hour = targetDate.getHours();
-      const timeOfDay = (hour >= 6 && hour < 18) ? 'day' : 'night';
-      
       await addDoc(logsRef, {
         systolic: Number(systolic),
         diastolic: Number(diastolic),
         pulse: pulse ? Number(pulse) : null,
-        timestamp: targetDate.toISOString(),
-        timeOfDay,
-        medicationContext: medContext || null
+        timestamp: new Date(dateTime).toISOString()
       });
       setSystolic('');
       setDiastolic('');
       setPulse('');
-      setMedContext('');
-      setShowAdvanced(false);
       
       // Reset datetime to current
       const now = new Date();
@@ -122,43 +109,6 @@ export default function Dashboard() {
                 className="w-full text-center text-sm font-medium text-slate-700 py-3 sm:py-4 border-2 border-slate-100 rounded-xl focus:ring-4 focus:ring-primary-100 focus:border-primary-500 outline-none transition-all"
               />
             </div>
-          </div>
-
-          {/* Advanced Info Toggle */}
-          <div className="pt-2">
-            <button 
-              type="button" 
-              onClick={() => setShowAdvanced(!showAdvanced)}
-              className="flex items-center gap-2 text-slate-500 hover:text-primary-600 font-semibold text-sm transition-colors"
-            >
-              {showAdvanced ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-              Additional Context (Optional)
-            </button>
-            
-            {showAdvanced && (
-              <div className="mt-4 p-5 bg-slate-50 border border-slate-100 rounded-xl animate-in slide-in-from-top-2 duration-300">
-                <label className="block text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-                   <Pill className="w-4 h-4 text-blue-500" /> Medication Status
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setMedContext(medContext === 'PRE' ? '' : 'PRE')}
-                    className={`py-3 rounded-xl border-2 font-bold text-sm transition-all focus:outline-none ${medContext === 'PRE' ? 'border-amber-500 bg-amber-50 text-amber-700 shadow-sm' : 'border-slate-200 bg-white text-slate-500 hover:border-amber-200 hover:bg-amber-50/50'}`}
-                  >
-                    PRE-Medication
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMedContext(medContext === 'POST' ? '' : 'POST')}
-                    className={`py-3 rounded-xl border-2 font-bold text-sm transition-all focus:outline-none ${medContext === 'POST' ? 'border-green-500 bg-green-50 text-green-700 shadow-sm' : 'border-slate-200 bg-white text-slate-500 hover:border-green-200 hover:bg-green-50/50'}`}
-                  >
-                    POST-Medication
-                  </button>
-                </div>
-                <p className="text-xs text-slate-400 mt-3 text-center">Tap to select context or leave blank if building a baseline.</p>
-              </div>
-            )}
           </div>
           
           <button 
