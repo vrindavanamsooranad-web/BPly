@@ -1,14 +1,21 @@
 {
   "short_name": "BPly",
-  "name": "BPly",
+  "name": "BPly - Blood Pressure Monitor",
+  "description": "Track, visualize and share your blood pressure history.",
   "icons": [
     {
       "src": "/favicon.svg",
       "type": "image/svg+xml",
-      "sizes": "512x512"
+      "sizes": "any"
+    },
+    {
+      "src": "/preview-logo.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
     }
   ],
-  "start_url": ".",
+  "start_url": "/",
   "display": "standalone",
   "theme_color": "#2563eb",
   "background_color": "#ffffff"

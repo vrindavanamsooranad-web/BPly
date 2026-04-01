@@ -56,14 +56,18 @@ export default function ShareDash() {
       
       try {
         await emailjs.send(
-          'service_56iqe9k', 
-          'template_247grif', 
+          'service_56iqe9k',
+          'template_247grif',
           {
+            from_name:   'BPly Health Monitor',
+            reply_to:    'no-reply@bply.vercel.app',
+            logo_url:    'https://bply.vercel.app/preview-logo.png',
             family_name: nameInput || 'Family Member',
             family_email: email,
-            user_name: userProfile?.name || 'A BPly User',
-            user_id: currentUser.uid
-          }, 
+            user_name:   userProfile?.name || 'A BPly User',
+            share_link:  `https://bply.vercel.app/shared/${currentUser.uid}`,
+            user_id:     currentUser.uid
+          },
           'YNVv0rI2soZaNdWx3'
         );
       } catch {
