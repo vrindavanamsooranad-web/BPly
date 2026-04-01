@@ -70,7 +70,7 @@ export default function ShareDash() {
           },
           'YNVv0rI2soZaNdWx3'
         );
-      } catch {
+      } catch (err) {
         // Email delivery failure is non-critical; invite is already saved
       }
 
@@ -91,7 +91,7 @@ export default function ShareDash() {
       await updateDoc(docRef, { sharedWith: arrayRemove(emailToRemove) });
       setSharedList(sharedList.filter(e => e !== emailToRemove));
       if (userProfile) setUserProfile({ ...userProfile, sharedWith: sharedList.filter(e => e !== emailToRemove) });
-    } catch { alert("Failed to remove access. Please try again."); }
+    } catch (err) { alert("Failed to remove access. Please try again."); }
   };
 
   const copyToClipboard = () => {
