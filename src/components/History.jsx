@@ -8,10 +8,10 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
 
-import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Title, Tooltip as ChartTooltip, Legend as ChartLegend } from 'chart.js';
-import { Line, Pie, Bar } from 'react-chartjs-2';
+import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip as ChartTooltip, Legend as ChartLegend } from 'chart.js';
+import { Line } from 'react-chartjs-2';
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Title, ChartTooltip, ChartLegend);
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, ChartTooltip, ChartLegend);
 
 export default function History() {
   const { currentUser, userProfile } = useAuth();
@@ -111,7 +111,7 @@ export default function History() {
       // Inject actual log registry directly using autoTable to prevent page cutoffs
       const tableBody = [];
       Object.entries(groupedLogs).forEach(([date, logs]) => {
-        tableBody.push([{ content: date, colSpan: 6, styles: { fontStyle: 'bold', fillColor: [248, 250, 252], textColor: [15, 23, 42] } }]);
+        tableBody.push([{ content: date, colSpan: 5, styles: { fontStyle: 'bold', fillColor: [248, 250, 252], textColor: [15, 23, 42] } }]);
         
         logs.forEach(log => {
           let timeStr = '-';
@@ -123,39 +123,26 @@ export default function History() {
             log.systolic.toString(),
             log.diastolic.toString(),
             log.pulse ? log.pulse.toString() : '-',
-            isHigh ? 'High BP' : 'Normal',
-            log.medicationStatus ? `[${log.medicationStatus}]` : '-'
+            isHigh ? 'High BP' : '-'
           ]);
         });
       });
 
       autoTable(pdf, {
         startY: pdfHeight + 10,
-        head: [['Time', 'Systolic', 'Diastolic', 'Pulse', 'Alerts', 'Meds']],
+        head: [['Time', 'Systolic', 'Diastolic', 'Pulse', 'Alerts']],
         body: tableBody,
         theme: 'grid',
-        headStyles: { fillColor: [0, 123, 255], textColor: [255, 255, 255], fontStyle: 'bold' }, // Royal Blue
+        headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' }, // slate-900 
         alternateRowStyles: { fillColor: [248, 250, 252] },
         didParseCell: function(data) {
           if (data.section === 'body') {
             if (data.row.raw.length > 1) {
               const alertText = data.row.raw[4];
-              const medStatus = data.row.raw[5];
               
-              if (data.column.index === 1 && (alertText === 'High BP' || alertText === 'CRITICAL')) {
-                data.cell.styles.textColor = [185, 28, 28];
+              if (alertText === 'High BP') {
+                data.cell.styles.textColor = [185, 28, 28]; // red-700
                 data.cell.styles.fontStyle = 'bold';
-              }
-              
-              // Style Med Badges
-              if (data.column.index === 5) {
-                if (medStatus === '[PRE]') {
-                  data.cell.styles.textColor = [0, 123, 255]; // Royal Blue
-                  data.cell.styles.fontStyle = 'bold';
-                } else if (medStatus === '[POST]') {
-                  data.cell.styles.textColor = [111, 66, 193]; // Purple
-                  data.cell.styles.fontStyle = 'bold';
-                }
               }
             }
           }
@@ -175,9 +162,7 @@ export default function History() {
         
         pdf.setFontSize(8);
         pdf.setTextColor(148, 163, 184); // slate-400
-        pdf.text(`BPly Health Analytics • Patient: ${userProfile?.name?.toUpperCase() || 'ANONYMOUS'}`, 15, pdf.internal.pageSize.getHeight() - 10);
-        pdf.text('Medical Disclaimer: Not a substitute for professional diagnosis.', pdfWidth / 2, pdf.internal.pageSize.getHeight() - 10, { align: 'center' });
-        pdf.text('www.bply.vercel.app', pdfWidth - 15, pdf.internal.pageSize.getHeight() - 10, { align: 'right' });
+        pdf.text('BPly Dashboards • Personal Reference  |  https://bply.vercel.app', pdfWidth / 2, pdf.internal.pageSize.getHeight() - 10, { align: 'center' });
       }
 
       pdf.save(`BP_Report_${userProfile?.name}.pdf`);
@@ -272,54 +257,9 @@ export default function History() {
 
   // ─── PDF Analytics ──────────────────────────────────────────────────────────
   
-  // 1. Vital Distribution (Pie)
-  const highLogs = filteredLogs.filter(l => l.systolic >= 140 || l.diastolic >= 90);
-  const normalLogs = filteredLogs.filter(l => l.systolic < 140 && l.diastolic < 90);
-  
-  const pieData = {
-    labels: ['Normal BP', 'High BP'],
-    datasets: [{
-      data: [normalLogs.length, highLogs.length],
-      backgroundColor: ['#17a2b8', '#007BFF'],
-      borderWidth: 0
-    }]
-  };
-
-  // 2. Trend Analysis (Bar)
-  const getAvg = (arr, key) => arr.length ? Math.round(arr.reduce((s, x) => s + x[key], 0) / arr.length) : 0;
-  
-  const morningLogs = filteredLogs.filter(l => {
-    const hour = new Date(l.timestamp).getHours();
-    return hour >= 6 && hour < 18;
-  });
-  const eveningLogs = filteredLogs.filter(l => {
-    const hour = new Date(l.timestamp).getHours();
-    return hour >= 18 || hour < 6;
-  });
-
-  const barData = {
-    labels: ['Morning', 'Evening'],
-    datasets: [
-      {
-        label: 'Systolic',
-        data: [getAvg(morningLogs, 'systolic'), getAvg(eveningLogs, 'systolic')],
-        backgroundColor: '#007BFF',
-        borderRadius: 4
-      },
-      {
-        label: 'Diastolic',
-        data: [getAvg(morningLogs, 'diastolic'), getAvg(eveningLogs, 'diastolic')],
-        backgroundColor: '#6f42c1',
-        borderRadius: 4
-      }
-    ]
-  };
-
-  // 3. Metadata
+  // 1. Metadata
   const patientAge = userProfile?.dob ? differenceInYears(new Date(), new Date(userProfile.dob)) : 'N/A';
-  const reportDateRange = filteredLogs.length > 0 
-    ? `${format(new Date(filteredLogs[filteredLogs.length-1].timestamp), 'MMM dd')} - ${format(new Date(filteredLogs[0].timestamp), 'MMM dd, yyyy')}`
-    : 'N/A';
+  const reportDateRange = rangeType === '30days' ? 'LAST 30 DAYS' : 'CUSTOM FILTER';
 
   return (
     <div className="space-y-8 pb-12">
@@ -522,52 +462,60 @@ export default function History() {
       {/* Hidden PDF Payload (Expanded standard A4 view) */}
       {showPdf && (
         <div style={{ position: 'absolute', left: '-9999px', top: 0, backgroundColor: '#ffffff' }}>
-          <div ref={printRef} style={{ width: '800px', backgroundColor: '#ffffff', padding: '40px', color: '#000000', fontFamily: 'sans-serif' }}>
+          <div ref={printRef} style={{ width: '800px', backgroundColor: '#ffffff', padding: '40px', color: '#1e293b', fontFamily: 'sans-serif' }}>
             
-            {/* Redesigned Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '30px' }}>
-               <div>
-                  <h1 style={{ fontSize: '32px', fontWeight: '800', color: '#000000', margin: 0, letterSpacing: '-0.5px' }}>Health Performance Report</h1>
-                  <p style={{ fontSize: '14px', color: '#64748b', marginTop: '4px' }}>Confidential Diagnostic Insights</p>
-               </div>
-               <img src="/preview-logo.png" alt="Logo" style={{ width: '80px', height: 'auto' }} />
+            {/* Header: Logo & Title Row */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '10px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Activity style={{ width: '28px', height: '28px', color: '#2563eb' }} />
+                  <span style={{ fontSize: '20px', fontWeight: '800', color: '#1e293b' }}>BPly</span>
+                </div>
+                <div>
+                  <h1 style={{ fontSize: '40px', fontWeight: '900', color: '#0f172a', margin: 0, letterSpacing: '-1px' }}>BLOOD PRESSURE REPORT</h1>
+                  <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    REPORT PERIOD: {reportDateRange}
+                  </p>
+                </div>
+              </div>
+
+              {/* Patient Metadata Card (Top Right) */}
+              <div style={{ borderLeft: '2px solid #e2e8f0', paddingLeft: '24px', textAlign: 'right' }}>
+                <h2 style={{ fontSize: '24px', fontWeight: '900', color: '#0f172a', margin: '0 0 4px 0' }}>{userProfile?.name || 'A S KRISHNAJITH'}</h2>
+                <p style={{ margin: 0, fontSize: '13px', fontWeight: '700', color: '#64748b', textTransform: 'uppercase' }}>
+                  AGE: {patientAge} | GENDER: {userProfile?.gender || 'MALE'}
+                </p>
+                <p style={{ margin: '2px 0 0 0', fontSize: '13px', fontWeight: '600', color: '#94a3b8' }}>
+                  DOB: {userProfile?.dob || '2009-03-18'}
+                </p>
+              </div>
             </div>
 
-            {/* Sub-Header Columns */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 2fr 1fr', gap: '20px', padding: '20px', backgroundColor: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '40px' }}>
-               <div>
-                  <label style={{ display: 'block', textTransform: 'uppercase', fontSize: '10px', fontWeight: '700', color: '#94a3b8', letterSpacing: '1px', marginBottom: '4px' }}>Patient Name</label>
-                  <p style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>{userProfile?.name || 'Guest User'}</p>
-               </div>
-               <div>
-                  <label style={{ display: 'block', textTransform: 'uppercase', fontSize: '10px', fontWeight: '700', color: '#94a3b8', letterSpacing: '1px', marginBottom: '4px' }}>Analysis Period</label>
-                  <p style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>{reportDateRange}</p>
-               </div>
-               <div>
-                  <label style={{ display: 'block', textTransform: 'uppercase', fontSize: '10px', fontWeight: '700', color: '#94a3b8', letterSpacing: '1px', marginBottom: '4px' }}>Subject Age</label>
-                  <p style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>{patientAge} Years</p>
-               </div>
-            </div>
+            <div style={{ borderBottom: '2px solid #0f172a', margin: '20px 0 30px 0' }}></div>
 
-            {/* Viz Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: '25px', marginBottom: '40px' }}>
-               <div style={{ padding: '20px', border: '1px solid #e2e8f0', borderRadius: '16px', backgroundColor: '#ffffff' }}>
-                  <h3 style={{ margin: '0 0 20px 0', fontSize: '14px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>Vital Distribution</h3>
-                  <div style={{ height: '180px' }}>
-                     <Pie data={pieData} options={{ maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } } }} />
-                  </div>
-               </div>
-               <div style={{ padding: '20px', border: '1px solid #e2e8f0', borderRadius: '16px', backgroundColor: '#ffffff' }}>
-                  <h3 style={{ margin: '0 0 20px 0', fontSize: '14px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>Trend Analysis (Morn vs Eve)</h3>
-                  <div style={{ height: '180px' }}>
-                     <Bar data={barData} options={{ maintainAspectRatio: false, scales: { y: { beginAtZero: true, grid: { display: false } }, x: { grid: { display: false } } }, plugins: { legend: { display: false } } }} />
-                  </div>
-               </div>
-            </div>
-
-            <p style={{ fontSize: '12px', color: '#94a3b8', textAlign: 'center', margin: '40px 0 10px 0', fontStyle: 'italic' }}>
-               The data below represents verified vital logs for the selected period.
+            <p style={{ fontSize: '12px', color: '#64748b', fontStyle: 'italic', marginBottom: '24px' }}>
+              This document was generated on {format(new Date(), 'MMMM dd, yyyy')} via the BPly Tracker Application.
             </p>
+
+            {/* Visualization Section */}
+            <div>
+              <h3 style={{ fontSize: '18px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#0f172a', marginBottom: '16px' }}>VISUALIZATION</h3>
+              <div style={{ height: '380px', width: '100%', padding: '20px', border: '1px solid #e2e8f0', borderRadius: '16px', backgroundColor: '#ffffff' }}>
+                <Line 
+                  data={chartData} 
+                  options={{
+                    ...chartOptions, 
+                    animation: false, 
+                    plugins: { ...chartOptions.plugins, legend: { position: 'top', align: 'center' } },
+                    scales: { 
+                      ...chartOptions.scales, 
+                      y: { min: 0, max: 300, ticks: { stepSize: 50 } },
+                      x: { grid: { display: false } }
+                    } 
+                  }} 
+                />
+              </div>
+            </div>
           </div>
         </div>
       )}
