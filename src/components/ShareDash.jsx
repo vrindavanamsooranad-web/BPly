@@ -66,8 +66,8 @@ export default function ShareDash() {
           }, 
           'YNVv0rI2soZaNdWx3'
         );
-      } catch (emailErr) {
-        console.error("EmailJS error:", emailErr);
+      } catch {
+        // Email delivery failure is non-critical; invite is already saved
       }
 
       setSuccess(`Sent! An email notification dispatched explicitly to ${email}.`);
@@ -87,7 +87,7 @@ export default function ShareDash() {
       await updateDoc(docRef, { sharedWith: arrayRemove(emailToRemove) });
       setSharedList(sharedList.filter(e => e !== emailToRemove));
       if (userProfile) setUserProfile({ ...userProfile, sharedWith: sharedList.filter(e => e !== emailToRemove) });
-    } catch (err) { alert("Failed operation."); }
+    } catch { alert("Failed to remove access. Please try again."); }
   };
 
   const copyToClipboard = () => {
@@ -159,7 +159,7 @@ export default function ShareDash() {
               disabled={isSending}
               className={`flex items-center justify-center gap-2 text-white font-medium rounded-xl text-sm px-6 py-3 transition-colors shadow-sm focus:ring-4 focus:ring-primary-100 w-full sm:w-auto self-end ${isSending ? 'bg-slate-400 cursor-not-allowed' : 'bg-primary-600 hover:bg-primary-700'}`}
             >
-              {isSending ? <span className="animate-pulse">Transmitting...</span> : <><Send className="w-4 h-4" /> Send Invite Loop</>}
+              {isSending ? <span className="animate-pulse">Sending...</span> : <><Send className="w-4 h-4" /> Send Invite</>}
             </button>
           </div>
         </form>

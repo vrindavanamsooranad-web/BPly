@@ -48,8 +48,7 @@ export default function Dashboard() {
       setMessage('Reading logged successfully!');
       setTimeout(() => setMessage(''), 3000);
     } catch (err) {
-      console.error(err);
-      setMessage('Failed to log reading.');
+      setMessage('Failed to log reading. Please try again.');
     } finally {
       setLoading(false);
     }

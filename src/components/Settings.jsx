@@ -37,8 +37,7 @@ export default function Settings() {
           // Fall back to whatever the AuthContext already loaded
           setProfile(userProfile);
         }
-      } catch (err) {
-        console.error('Error loading profile:', err);
+      } catch {
         setProfile(userProfile);
       } finally {
         setLoading(false);
