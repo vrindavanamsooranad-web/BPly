@@ -95,7 +95,7 @@ export default function History() {
     try {
       const element = printRef.current;
       const canvas = await html2canvas(element, { 
-        scale: 2, 
+        scale: 3, 
         useCORS: true, 
         logging: false, 
         backgroundColor: '#ffffff'

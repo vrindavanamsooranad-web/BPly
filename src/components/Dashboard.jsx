@@ -13,8 +13,6 @@ export default function Dashboard() {
   const [dateTime, setDateTime] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
-  const [showMedication, setShowMedication] = useState(false);
-  const [medicationStatus, setMedicationStatus] = useState('PRE'); // 'PRE' or 'POST'
 
   // Set default datetime to local time (YYYY-MM-DDThh:mm)
   useEffect(() => {
@@ -36,8 +34,7 @@ export default function Dashboard() {
         systolic: Number(systolic),
         diastolic: Number(diastolic),
         pulse: pulse ? Number(pulse) : null,
-        timestamp: new Date(dateTime).toISOString(),
-        medicationStatus: showMedication ? medicationStatus : null
+        timestamp: new Date(dateTime).toISOString()
       });
       setSystolic('');
       setDiastolic('');
@@ -113,48 +110,7 @@ export default function Dashboard() {
             </div>
           </div>
           
-          <div className="pt-2 px-1">
-            <label className="flex items-center gap-3 cursor-pointer group">
-              <div className="relative">
-                <input 
-                  type="checkbox" 
-                  className="sr-only" 
-                  checked={showMedication} 
-                  onChange={(e) => setShowMedication(e.target.checked)} 
-                />
-                <div className={`w-10 h-5 rounded-full transition-colors ${showMedication ? 'bg-primary-600' : 'bg-slate-300'}`}></div>
-                <div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-transform ${showMedication ? 'translate-x-5' : ''}`}></div>
-              </div>
-              <span className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 transition-colors">Add Medication Info</span>
-            </label>
 
-            {showMedication && (
-              <div className="mt-4 flex gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
-                <button
-                  type="button"
-                  onClick={() => setMedicationStatus('PRE')}
-                  className={`flex-1 py-2.5 rounded-xl border-2 font-bold text-sm transition-all ${
-                    medicationStatus === 'PRE' 
-                      ? 'bg-blue-50 border-blue-600 text-blue-700 shadow-sm' 
-                      : 'bg-white border-slate-100 text-slate-400 hover:border-slate-200'
-                  }`}
-                >
-                  BEFORE MEDS [PRE]
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMedicationStatus('POST')}
-                  className={`flex-1 py-2.5 rounded-xl border-2 font-bold text-sm transition-all ${
-                    medicationStatus === 'POST' 
-                      ? 'bg-purple-50 border-purple-600 text-purple-700 shadow-sm' 
-                      : 'bg-white border-slate-100 text-slate-400 hover:border-slate-200'
-                  }`}
-                >
-                  AFTER MEDS [POST]
-                </button>
-              </div>
-            )}
-          </div>
           
           <button 
             type="submit" disabled={loading}
