@@ -215,7 +215,39 @@ export default function History() {
     }
   };
 
-  if (loading) return <div className="text-center py-12 text-slate-500">Loading history...</div>;
+  if (loading) {
+    return (
+      <div className="space-y-8 pb-12 animate-pulse">
+        {/* Header Skeleton */}
+        <div className="bg-white rounded-2xl border border-slate-100 p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+          <div className="space-y-3">
+            <div className="h-8 w-48 bg-slate-200 rounded-lg"></div>
+            <div className="h-4 w-64 bg-slate-100 rounded-md"></div>
+          </div>
+          <div className="h-14 w-full md:w-80 bg-slate-100 rounded-xl"></div>
+        </div>
+
+        {/* Chart Skeleton */}
+        <div className="bg-white rounded-2xl border border-slate-100 p-6 space-y-6">
+          <div className="h-6 w-56 bg-slate-200 rounded-lg"></div>
+          <div className="h-64 sm:h-72 w-full bg-slate-100 rounded-xl"></div>
+        </div>
+
+        {/* Table Skeleton */}
+        <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+          <div className="p-6 border-b border-slate-50">
+            <div className="h-6 w-48 bg-slate-200 rounded-lg"></div>
+          </div>
+          <div className="p-6 space-y-4">
+            <div className="h-10 w-full bg-slate-100 rounded-lg"></div>
+            <div className="h-10 w-full bg-slate-50 rounded-lg"></div>
+            <div className="h-10 w-full bg-slate-50 rounded-lg"></div>
+            <div className="h-10 w-full bg-slate-50 rounded-lg"></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const chartDataLogs = [...filteredLogs].reverse(); // oldest to newest for the graph
 

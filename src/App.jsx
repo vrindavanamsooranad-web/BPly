@@ -51,14 +51,7 @@ class ErrorBoundary extends Component {
 // ─── Private Route ────────────────────────────────────────────────────────────
 function PrivateRoute({ children, requireProfile = true }) {
   const { currentUser, userProfile, loading } = useAuth();
-  if (loading) return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="text-slate-400 text-sm flex items-center gap-2">
-        <span className="inline-block w-4 h-4 border-2 border-slate-300 border-t-blue-500 rounded-full animate-spin" />
-        Loading…
-      </div>
-    </div>
-  );
+  if (loading) return null; // Handled smoothly by AuthContext splash screen
   if (!currentUser) return <Navigate to="/login" replace />;
   if (requireProfile && !userProfile) return <Navigate to="/onboarding" replace />;
   return children;
