@@ -20,43 +20,44 @@ export default function SharedView() {
   useEffect(() => {
     if (!userId) return;
 
-    // Real-time listener for patient's profile to handle instant revocation
     const profileRef = doc(db, 'users', userId);
-    const unsubscribeProfile = onSnapshot(profileRef, async (profileSnap) => {
-      if (!profileSnap.exists()) {
-        setError("This URL parameter maps to a deleted structure.");
-        setLoading(false);
-        return;
-      }
-
-      const profileData = profileSnap.data();
-      setTargetProfile(profileData);
-
-      // Security check
-      const viewers = profileData.authorized_viewers || {};
-      const isAuth = currentUser && viewers[currentUser.uid];
-      
-      if (currentUser?.uid === userId || isAuth) {
-        setIsAuthorized(true);
-        // Only fetch logs once authorized
-        try {
-          const q = query(collection(db, `users/${userId}/logs`), orderBy('timestamp', 'desc'));
-          const querySnapshot = await getDocs(q);
-          const fetchedLogs = querySnapshot.docs.map(ds => ({ id: ds.id, ...ds.data() })).filter(log => log.timestamp);
-          setLogs(fetchedLogs);
-        } catch (err) {
-          setError("Permission Denied reading logs.");
+    
+    // Using simple getDoc instead of onSnapshot since this is a public dashboard view
+    // which prevents constant permission re-evaluation crashes for anonymous users
+    async function loadSharedData() {
+      try {
+        const profileSnap = await getDoc(profileRef);
+        if (!profileSnap.exists()) {
+          setError("Report Not Found: The requested dashboard does not exist.");
+          setLoading(false);
+          return;
         }
-      } else {
-        setIsAuthorized(false);
-      }
-      setLoading(false);
-    }, (err) => {
-      setError("Failed to monitor security rules.");
-      setLoading(false);
-    });
 
-    return () => unsubscribeProfile();
+        const profileData = profileSnap.data();
+        setTargetProfile(profileData);
+
+        // Does the current viewer have active tracking?
+        const viewers = profileData.authorized_viewers || {};
+        const isAuth = currentUser && viewers[currentUser.uid];
+        setIsAuthorized(!!isAuth);
+
+        // Safe Data Fetching (Bypass Auth requirement)
+        const q = query(collection(db, `users/${userId}/logs`), orderBy('timestamp', 'desc'));
+        const querySnapshot = await getDocs(q);
+        const fetchedLogs = querySnapshot.docs
+          .map(ds => ({ id: ds.id, ...ds.data() }))
+          .filter(log => log.timestamp);
+          
+        setLogs(fetchedLogs);
+      } catch (err) {
+        console.error("Shared Access Network Error:", err);
+        setError("Report Not Found or Access Denied.");
+      } finally {
+        setLoading(false);
+      }
+    }
+    
+    loadSharedData();
   }, [userId, currentUser]);
 
   const handleAddToFamily = async () => {
@@ -92,9 +93,27 @@ export default function SharedView() {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-slate-500 animate-pulse">
-        <Lock className="w-12 h-12 text-slate-300 mb-4" />
-        <p>Tunneling Public Graph Node...</p>
+      <div className="space-y-8 pb-12 animate-pulse w-full max-w-5xl mx-auto mt-4 px-4 sm:px-0">
+        <div className="bg-white rounded-2xl border border-slate-100 p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 shadow-sm">
+          <div className="space-y-3 w-full">
+            <div className="h-8 w-48 bg-slate-200 rounded-lg"></div>
+            <div className="h-4 w-64 bg-slate-100 rounded-md"></div>
+          </div>
+        </div>
+        <div className="bg-white rounded-2xl border border-slate-100 p-6 space-y-6 shadow-sm">
+          <div className="h-6 w-56 bg-slate-200 rounded-lg"></div>
+          <div className="h-64 sm:h-72 w-full bg-slate-100 rounded-xl"></div>
+        </div>
+        <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm">
+          <div className="p-6 border-b border-slate-50">
+            <div className="h-6 w-48 bg-slate-200 rounded-lg"></div>
+          </div>
+          <div className="p-6 space-y-4">
+            <div className="h-10 w-full bg-slate-100 rounded-lg"></div>
+            <div className="h-10 w-full bg-slate-50 rounded-lg"></div>
+            <div className="h-10 w-full bg-slate-50 rounded-lg"></div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -154,40 +173,23 @@ export default function SharedView() {
       <div className="bg-primary-50 rounded-2xl shadow-sm border border-primary-100 p-6 flex items-start gap-4 flex-col sm:flex-row">
          <div>
           <h2 className="text-xl sm:text-2xl font-bold text-primary-900 border-b border-primary-200 pb-2 mb-2">
-            Patient Identity: {targetProfile?.name || 'Anonymous User'}
+            Viewing Medical Dashboard: {targetProfile?.name || 'Anonymous User'}
           </h2>
           <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-semibold text-primary-600 uppercase tracking-widest bg-primary-100 px-3 py-1 rounded inline-flex">
-            {isAuthorized ? <ShieldCheck className="w-3 h-3" /> : <Lock className="w-3 h-3" />} 
-            {isAuthorized ? 'Secure Family Viewer Connected' : 'Authorization Required'}
+            {!currentUser ? (
+              <><Lock className="w-3 h-3" /> Anonymous View</>
+            ) : isAuthorized ? (
+              <><ShieldCheck className="w-3 h-3 text-green-600" /> Authorized Guardian</>
+            ) : (
+              <><Lock className="w-3 h-3" /> Unlinked Medical Data</>
+            )}
           </div>
         </div>
       </div>
 
-      {!isAuthorized ? (
-        <div className="bg-white rounded-xl border border-slate-200 p-12 text-center shadow-sm">
-          <Lock className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-slate-800 mb-2">Protected Medical Data</h2>
-          <p className="text-slate-500 mb-8 max-w-md mx-auto">
-            {targetProfile?.name || 'This user'}'s health dashboard requires end-to-end authorization. 
-            {currentUser ? ' Establish a secure link to add them to your Family Dashboard.' : ' Please log in to request or establish a secure link.'}
-          </p>
-          {currentUser ? (
-            <button 
-              onClick={handleAddToFamily}
-              disabled={addingToFamily}
-              className={`font-bold px-8 py-3 rounded-xl transition-colors ${addingToFamily ? 'bg-slate-300 text-slate-600' : 'bg-primary-600 text-white hover:bg-primary-700'}`}
-            >
-              {addingToFamily ? 'Establishing Link...' : 'Add to My Family Dashboard'}
-            </button>
-          ) : (
-            <a href="/login" className="inline-block bg-primary-600 text-white font-bold px-8 py-3 rounded-xl hover:bg-primary-700 transition-colors">
-              Log In to Authorize
-            </a>
-          )}
-        </div>
-      ) : logs.length === 0 ? (
+      {logs.length === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 p-12 text-center text-slate-500">
-           No readings have been recorded by this patient yet.
+           No readings have been recorded by this user yet.
         </div>
       ) : (
         <>
@@ -259,6 +261,24 @@ export default function SharedView() {
               </table>
             </div>
           </div>
+
+          {/* Add to Family Call to Action (Only for logged-in authorized-capable users) */}
+          {currentUser && currentUser.uid !== userId && !isAuthorized && (
+            <div className="bg-slate-800 rounded-2xl shadow-sm border border-slate-700 p-8 text-center mt-12 animate-in fade-in slide-in-from-bottom-4">
+              <ShieldCheck className="w-12 h-12 text-blue-400 mx-auto mb-4" />
+              <h2 className="text-xl font-bold text-white mb-2">Add to Family Dashboard</h2>
+              <p className="text-slate-300 mb-6 max-w-md mx-auto text-sm">
+                You are currently viewing this report anonymously. Add {targetProfile?.name || 'this patient'} to your Family Dashboard to monitor their health records securely in real-time.
+              </p>
+              <button 
+                onClick={handleAddToFamily}
+                disabled={addingToFamily}
+                className={`font-bold px-8 py-3 rounded-xl transition-colors ${addingToFamily ? 'bg-slate-600 text-slate-400' : 'bg-blue-500 text-white hover:bg-blue-600'}`}
+              >
+                {addingToFamily ? 'Connecting...' : 'Establish Secure Link'}
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>
