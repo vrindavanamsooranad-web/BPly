@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { db, auth } from '../firebase/config';
 import { doc, getDoc, onSnapshot, updateDoc, deleteField } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
-import { User, Mail, Calendar, LogOut, ShieldCheck } from 'lucide-react';
+import { User, Mail, Calendar, LogOut, ShieldCheck, Share2 } from 'lucide-react';
 import { differenceInYears, format as fnsFormat } from 'date-fns';
 
 function ProfileField({ icon: Icon, label, value }) {
@@ -42,15 +42,12 @@ export default function Settings() {
     return () => unsubscribe();
   }, [currentUser, userProfile]);
 
-  const handleRevokeAccess = async (guardianId, guardianName) => {
-    if (!window.confirm(`Are you sure you want to revoke ${guardianName}'s access to your medical data?`)) return;
+  const toggleSharing = async () => {
     try {
       const patientRef = doc(db, 'users', currentUser.uid);
-      const guardianRef = doc(db, 'users', guardianId);
-      await updateDoc(patientRef, { [`authorized_viewers.${guardianId}`]: deleteField() });
-      await updateDoc(guardianRef, { [`familyMembers.${currentUser.uid}`]: deleteField() });
+      await updateDoc(patientRef, { isShared: !profile?.isShared });
     } catch (err) {
-      alert("Revocation failed. Missing Firebase permissions.");
+      alert("Failed to update privacy settings.");
     }
   };
 
@@ -120,32 +117,31 @@ export default function Settings() {
 
         {/* Data Sharing Control Pane */}
         <div className="px-6 py-6 border-t border-slate-100">
-          <div className="flex items-center gap-2 mb-4">
-            <ShieldCheck className="w-5 h-5 text-primary-500" />
-            <h2 className="text-lg font-bold text-slate-800">Data Sharing Privacy</h2>
-          </div>
-          <p className="text-sm text-slate-500 mb-6">These family members currently have access to your Blood Pressure Dashboard. You can instantly revoke this access at any time.</p>
-          
-          {!profile?.authorized_viewers || Object.keys(profile.authorized_viewers).length === 0 ? (
-            <div className="text-center p-6 bg-slate-50 rounded-xl border border-slate-100 text-sm text-slate-400">
-              Your dashboard is fully private.
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Share2 className="w-5 h-5 text-primary-500" />
+              <h2 className="text-lg font-bold text-slate-800">Public Link Sharing</h2>
             </div>
-          ) : (
-            <div className="space-y-3">
-              {Object.entries(profile.authorized_viewers).map(([guardianId, data]) => (
-                <div key={guardianId} className="flex items-center justify-between p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
-                  <div>
-                    <p className="text-sm font-bold text-slate-800">{data.name}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">{data.email || 'Email hidden'} · Added {data.addedAt ? fnsFormat(new Date(data.addedAt), 'MMM dd') : 'Unknown'}</p>
-                  </div>
-                  <button 
-                    onClick={() => handleRevokeAccess(guardianId, data.name)}
-                    className="text-xs font-bold bg-white text-red-600 border border-red-200 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
-                  >
-                    Revoke Access
-                  </button>
-                </div>
-              ))}
+            
+            <button 
+              onClick={toggleSharing}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${profile?.isShared ? 'bg-primary-500' : 'bg-slate-200'}`}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${profile?.isShared ? 'translate-x-6' : 'translate-x-1'}`} />
+            </button>
+          </div>
+          <p className="text-sm text-slate-500 mb-4">
+            {profile?.isShared 
+              ? "Your data is currently accessible via your direct shared link." 
+              : "Enable this to allow anyone with your unique URL to view your dashboard."}
+          </p>
+          
+          {profile?.isShared && (
+            <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl">
+              <p className="text-xs font-semibold text-blue-800 mb-1">Your Public Dashboard Link:</p>
+              <a href={`/shared/${currentUser?.uid}`} target="_blank" rel="noreferrer" className="text-sm break-all font-medium text-blue-600 hover:underline">
+                {window.location.origin}/shared/{currentUser?.uid}
+              </a>
             </div>
           )}
         </div>

@@ -6,7 +6,7 @@
     <link rel="apple-touch-icon" href="/preview-logo.png" />
     <link rel="manifest" href="/manifest.json" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="theme-color" content="#ffffff" />
+    <meta name="theme-color" content="#2563eb" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="description" content="BPly - A professional blood pressure monitor and tracker for personal and family health management." />
@@ -21,51 +21,9 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta property="og:url" content="https://bply.vercel.app" />
     <meta property="og:type" content="website" />
-    
-    <style>
-      /* Initial state */
-      body { margin: 0; background-color: #ffffff; }
-      #app-splash { display: none; }
-      
-      /* Active state for Standalone PWA only */
-      html.is-standalone #app-splash { 
-        display: flex; 
-        align-items: center; 
-        justify-content: center; 
-        position: fixed;
-        inset: 0;
-        z-index: 99999;
-        background-color: #ffffff; 
-      }
-      
-      @keyframes bply-heartbeat {
-        0%, 100% { transform: scale(1); opacity: 1; }
-        15% { transform: scale(1.15); opacity: 0.9; }
-        30% { transform: scale(1); opacity: 1; }
-        45% { transform: scale(1.15); opacity: 0.9; }
-        60%, 100% { transform: scale(1); opacity: 1; }
-      }
-      .splash-logo { 
-        animation: bply-heartbeat 1.5s ease-in-out infinite; 
-        width: 100px; 
-        height: 100px; 
-        border-radius: 20%; 
-        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
-      }
-    </style>
-    <script>
-      (function() {
-        if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
-          document.documentElement.classList.add('is-standalone');
-        }
-      })();
-    </script>
     <title>BPly - Blood Pressure Monitor</title>
   </head>
   <body>
-    <div id="app-splash">
-      <img src="/maskable-icon.svg" class="splash-logo" alt="BPly Splash Bootloader" />
-    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

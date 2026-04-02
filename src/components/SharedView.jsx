@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { db } from '../firebase/config';
-import { collection, query, orderBy, getDocs, doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore';
-import { Activity, Calendar, Lock, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { collection, query, orderBy, getDocs, doc, getDoc } from 'firebase/firestore';
+import { Activity, Calendar, Lock, AlertTriangle, Share2 } from 'lucide-react';
 import { format } from 'date-fns';
-import { useAuth } from '../contexts/AuthContext';
 
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip as ChartTooltip, Legend as ChartLegend } from 'chart.js';
 import { Line } from 'react-chartjs-2';
@@ -13,17 +12,18 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, C
 
 export default function SharedView() {
   const { userId } = useParams();
-  const { currentUser, userProfile } = useAuth();
   
   const [logs, setLogs] = useState([]);
   const [targetProfile, setTargetProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
   useEffect(() => {
     if (!userId) return;
 
     const profileRef = doc(db, 'users', userId);
     
-    // Using simple getDoc instead of onSnapshot since this is a public dashboard view
-    // which prevents constant permission re-evaluation crashes for anonymous users
+    // Pure, anonymous fetching logic disconnected from Auth layer
     async function loadSharedData() {
       try {
         const profileSnap = await getDoc(profileRef);
@@ -34,13 +34,17 @@ export default function SharedView() {
         }
 
         const profileData = profileSnap.data();
+        
+        // Strict Privacy Rule Check on the Front-end
+        if (!profileData.isShared) {
+          setError("This dashboard is fully private. The owner has not enabled public link sharing.");
+          setLoading(false);
+          return;
+        }
+
         setTargetProfile(profileData);
 
-        const viewers = profileData.authorized_viewers || {};
-        const isAuth = currentUser ? viewers[currentUser.uid] : false;
-        setIsAuthorized(!!isAuth);
-
-        // Safe Data Fetching (Bypass Auth requirement)
+        // Safe Data Fetching
         const q = query(collection(db, `users/${userId}/logs`), orderBy('timestamp', 'desc'));
         const querySnapshot = await getDocs(q);
         const fetchedLogs = querySnapshot.docs
@@ -50,45 +54,14 @@ export default function SharedView() {
         setLogs(fetchedLogs);
       } catch (err) {
         console.error("Shared Access Network Error:", err);
-        setError("Report Not Found or Access Denied.");
+        setError("Report Not Found or Permissions Denied.");
       } finally {
         setLoading(false);
       }
     }
     
     loadSharedData();
-  }, [userId, currentUser]);
-
-  const handleAddToFamily = async () => {
-    if (!currentUser) return;
-    setAddingToFamily(true);
-    try {
-      const patientRef = doc(db, 'users', userId);
-      await updateDoc(patientRef, {
-        [`authorized_viewers.${currentUser.uid}`]: {
-          name: userProfile?.name || currentUser.email,
-          email: currentUser.email,
-          addedAt: new Date().toISOString()
-        }
-      });
-
-      const guardianRef = doc(db, 'users', currentUser.uid);
-      await updateDoc(guardianRef, {
-        [`familyMembers.${userId}`]: {
-          name: targetProfile?.name || 'Unknown Patient',
-          addedAt: new Date().toISOString()
-        }
-      });
-
-      setIsAuthorized(true);
-      window.location.reload();
-    } catch (err) {
-      console.error(err);
-      setError("Failed to establish secure link. Firebase permission missing.");
-    } finally {
-      setAddingToFamily(false);
-    }
-  };
+  }, [userId]);
 
   if (loading) {
     return (
@@ -121,7 +94,7 @@ export default function SharedView() {
     return (
       <div className="max-w-2xl mx-auto mt-10 p-8 border border-red-200 bg-red-50 rounded-2xl text-center shadow-sm">
         <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-        <h2 className="text-2xl font-bold text-red-800 mb-2">Node Locked By Firebase</h2>
+        <h2 className="text-2xl font-bold text-red-800 mb-2">Access Denied</h2>
         <p className="text-red-600 mb-6">{error}</p>
       </div>
     );
@@ -169,19 +142,13 @@ export default function SharedView() {
 
   return (
     <div className="space-y-8 pb-12">
-      <div className="bg-primary-50 rounded-2xl shadow-sm border border-primary-100 p-6 flex items-start gap-4 flex-col sm:flex-row">
+      <div className="bg-primary-50 rounded-2xl shadow-sm border border-primary-100 p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
          <div>
           <h2 className="text-xl sm:text-2xl font-bold text-primary-900 border-b border-primary-200 pb-2 mb-2">
-            Viewing Medical Dashboard: {targetProfile?.name || 'Anonymous User'}
+            Public Medical Report: {targetProfile?.name || 'Anonymous User'}
           </h2>
           <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-semibold text-primary-600 uppercase tracking-widest bg-primary-100 px-3 py-1 rounded inline-flex">
-            {!currentUser ? (
-              <><Lock className="w-3 h-3" /> Anonymous View</>
-            ) : isAuthorized ? (
-              <><ShieldCheck className="w-3 h-3 text-green-600" /> Authorized Guardian</>
-            ) : (
-              <><Lock className="w-3 h-3" /> Unlinked Medical Data</>
-            )}
+            <Share2 className="w-3 h-3 text-blue-600" /> Public Viewer Link Active
           </div>
         </div>
       </div>
@@ -260,34 +227,6 @@ export default function SharedView() {
               </table>
             </div>
           </div>
-
-          {/* Add to Family Call to Action (Shown to ALL unconnected users) */}
-          {currentUser?.uid !== userId && !isAuthorized && (
-            <div className="bg-slate-800 rounded-2xl shadow-sm border border-slate-700 p-8 text-center mt-12 animate-in fade-in slide-in-from-bottom-4">
-              <ShieldCheck className="w-12 h-12 text-blue-400 mx-auto mb-4" />
-              <h2 className="text-xl font-bold text-white mb-2">Add to Family Dashboard</h2>
-              <p className="text-slate-300 mb-6 max-w-md mx-auto text-sm">
-                You are currently viewing this report anonymously. Add {targetProfile?.name || 'this patient'} to your Family Dashboard to monitor their health records securely in real-time.
-              </p>
-              
-              {currentUser ? (
-                <button 
-                  onClick={handleAddToFamily}
-                  disabled={addingToFamily}
-                  className={`font-bold px-8 py-3 rounded-xl transition-colors ${addingToFamily ? 'bg-slate-600 text-slate-400' : 'bg-blue-500 text-white hover:bg-blue-600'}`}
-                >
-                  {addingToFamily ? 'Connecting...' : 'Establish Secure Link'}
-                </button>
-              ) : (
-                <button 
-                  onClick={() => window.location.href = `/login?redirect=/shared/${userId}`}
-                  className="font-bold px-8 py-3 rounded-xl transition-colors bg-blue-500 text-white hover:bg-blue-600"
-                >
-                  Log In to Setup Family Link
-                </button>
-              )}
-            </div>
-          )}
         </>
       )}
     </div>

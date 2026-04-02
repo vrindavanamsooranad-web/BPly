@@ -12,7 +12,6 @@ import History from './components/History';
 import Home from './components/Home';
 import Settings from './components/Settings';
 import SharedView from './components/SharedView';
-import ShareDash from './components/ShareDash';
 
 // ─── Error Boundary ──────────────────────────────────────────────────────────
 class ErrorBoundary extends Component {
@@ -91,7 +90,6 @@ function Layout({ children }) {
                 <>
                   <NavLink to="/dashboard" icon={Activity}     label="Log" />
                   <NavLink to="/history"   icon={HistoryIcon}  label="History & PDF" />
-                  <NavLink to="/share"     icon={Users}        label="Share" />
                   <NavLink to="/settings"  icon={User}         label="Profile" />
                   <button
                     onClick={() => signOut(auth)}
@@ -131,9 +129,6 @@ function Layout({ children }) {
                   </Link>
                   <Link onClick={close} to="/history" className="w-full text-left px-3 py-3 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50 flex items-center gap-3">
                     <HistoryIcon className="w-5 h-5 text-blue-500" /> History &amp; PDF
-                  </Link>
-                  <Link onClick={close} to="/share" className="w-full text-left px-3 py-3 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50 flex items-center gap-3">
-                    <Users className="w-5 h-5 text-blue-500" /> Share Access
                   </Link>
                   <Link onClick={close} to="/settings" className="w-full text-left px-3 py-3 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-slate-50 flex items-center gap-3">
                     <User className="w-5 h-5 text-blue-500" /> Profile
@@ -184,9 +179,6 @@ function App() {
               } />
               <Route path="/history" element={
                 <PrivateRoute><History /></PrivateRoute>
-              } />
-              <Route path="/share" element={
-                <PrivateRoute><ShareDash /></PrivateRoute>
               } />
               <Route path="/settings" element={
                 <PrivateRoute><Settings /></PrivateRoute>
