@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { db } from '../firebase/config';
+import { auth } from '../firebase/config';
 import { collection, query, orderBy, getDocs, doc, getDoc } from 'firebase/firestore';
-import { Activity, Calendar, Lock, AlertTriangle, Share2 } from 'lucide-react';
+import { Activity, Calendar, AlertTriangle, Globe, Lock, LogIn } from 'lucide-react';
 import { format } from 'date-fns';
 
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip as ChartTooltip, Legend as ChartLegend } from 'chart.js';
@@ -12,57 +13,77 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, C
 
 export default function SharedView() {
   const { userId } = useParams();
-  
+
   const [logs, setLogs] = useState([]);
   const [targetProfile, setTargetProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [accessDenied, setAccessDenied] = useState(false);
+  const [needsLogin, setNeedsLogin] = useState(false);
 
   useEffect(() => {
     if (!userId) return;
 
-    const profileRef = doc(db, 'users', userId);
-    
-    // Pure, anonymous fetching logic disconnected from Auth layer
     async function loadSharedData() {
       try {
-        const profileSnap = await getDoc(profileRef);
+        const profileSnap = await getDoc(doc(db, 'users', userId));
         if (!profileSnap.exists()) {
-          setError("Report Not Found: The requested dashboard does not exist.");
+          setError('This report does not exist or has been deleted.');
           setLoading(false);
           return;
         }
 
         const profileData = profileSnap.data();
-        
-        // Strict Privacy Rule Check on the Front-end (matches isPublic Firestore flag)
-        if (!profileData.isPublic) {
-          setError("This link has been deactivated by the owner.");
+
+        // ── PATH 1: isPublic = true → Allow anyone, no auth needed ──────────
+        if (profileData.isPublic === true) {
+          setTargetProfile(profileData);
+          const q = query(collection(db, `users/${userId}/logs`), orderBy('timestamp', 'desc'));
+          const snap = await getDocs(q);
+          setLogs(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(l => l.timestamp));
           setLoading(false);
           return;
         }
 
-        setTargetProfile(profileData);
+        // ── PATH 2: Restricted → Check viewer's credentials ─────────────────
+        const currentUser = auth.currentUser;
+        const authorizedEmails = profileData.authorizedEmails ?? [];
 
-        // Safe Data Fetching
+        // Not logged in at all → prompt login
+        if (!currentUser) {
+          setNeedsLogin(true);
+          setLoading(false);
+          return;
+        }
+
+        // Logged in but email not in authorizedEmails and not the owner
+        const viewerEmail = currentUser.email?.toLowerCase() ?? '';
+        const isOwner = currentUser.uid === userId;
+        const isAuthorized = authorizedEmails.map(e => e.toLowerCase()).includes(viewerEmail);
+
+        if (!isOwner && !isAuthorized) {
+          setAccessDenied(true);
+          setLoading(false);
+          return;
+        }
+
+        // Authorized → load data
+        setTargetProfile(profileData);
         const q = query(collection(db, `users/${userId}/logs`), orderBy('timestamp', 'desc'));
-        const querySnapshot = await getDocs(q);
-        const fetchedLogs = querySnapshot.docs
-          .map(ds => ({ id: ds.id, ...ds.data() }))
-          .filter(log => log.timestamp);
-          
-        setLogs(fetchedLogs);
+        const snap = await getDocs(q);
+        setLogs(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(l => l.timestamp));
       } catch (err) {
-        console.error("Shared Access Network Error:", err);
-        setError("Report Not Found or Permissions Denied.");
+        console.error('SharedView fetch error:', err);
+        setError('Failed to load the report. The link may be invalid.');
       } finally {
         setLoading(false);
       }
     }
-    
+
     loadSharedData();
   }, [userId]);
 
+  // ── LOADING STATE ──────────────────────────────────────────────────────────
   if (loading) {
     return (
       <div className="space-y-8 pb-12 animate-pulse w-full max-w-5xl mx-auto mt-4 px-4 sm:px-0">
@@ -77,9 +98,7 @@ export default function SharedView() {
           <div className="h-64 sm:h-72 w-full bg-slate-100 rounded-xl"></div>
         </div>
         <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm">
-          <div className="p-6 border-b border-slate-50">
-            <div className="h-6 w-48 bg-slate-200 rounded-lg"></div>
-          </div>
+          <div className="p-6 border-b border-slate-50"><div className="h-6 w-48 bg-slate-200 rounded-lg"></div></div>
           <div className="p-6 space-y-4">
             <div className="h-10 w-full bg-slate-100 rounded-lg"></div>
             <div className="h-10 w-full bg-slate-50 rounded-lg"></div>
@@ -90,16 +109,54 @@ export default function SharedView() {
     );
   }
 
+  // ── NEEDS LOGIN ────────────────────────────────────────────────────────────
+  if (needsLogin) {
+    return (
+      <div className="max-w-md mx-auto mt-12 p-8 bg-white border border-slate-200 rounded-2xl text-center shadow-sm">
+        <div className="w-14 h-14 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <Lock className="w-7 h-7 text-slate-500" />
+        </div>
+        <h2 className="text-xl font-bold text-slate-800 mb-2">This report is restricted</h2>
+        <p className="text-slate-500 text-sm mb-6">
+          The owner has limited access to specific people. Log in to check if you have been granted access.
+        </p>
+        <Link
+          to={`/login?redirect=/shared/${userId}`}
+          className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-3 rounded-xl transition-colors"
+        >
+          <LogIn className="w-4 h-4" /> Log In to View
+        </Link>
+      </div>
+    );
+  }
+
+  // ── ACCESS DENIED ──────────────────────────────────────────────────────────
+  if (accessDenied) {
+    return (
+      <div className="max-w-md mx-auto mt-12 p-8 bg-white border border-slate-200 rounded-2xl text-center shadow-sm">
+        <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <Lock className="w-7 h-7 text-red-500" />
+        </div>
+        <h2 className="text-xl font-bold text-slate-800 mb-2">Access Denied</h2>
+        <p className="text-slate-500 text-sm">
+          You don't have permission to view this report. Ask the owner to add your email address in their sharing settings.
+        </p>
+      </div>
+    );
+  }
+
+  // ── GENERIC ERROR ──────────────────────────────────────────────────────────
   if (error) {
     return (
       <div className="max-w-2xl mx-auto mt-10 p-8 border border-red-200 bg-red-50 rounded-2xl text-center shadow-sm">
         <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-        <h2 className="text-2xl font-bold text-red-800 mb-2">Access Denied</h2>
+        <h2 className="text-2xl font-bold text-red-800 mb-2">Report Not Found</h2>
         <p className="text-red-600 mb-6">{error}</p>
       </div>
     );
   }
 
+  // ── DATA RENDERING ─────────────────────────────────────────────────────────
   const groupedLogs = logs.reduce((acc, log) => {
     let dateKey = 'Invalid Date';
     try { dateKey = format(new Date(log.timestamp), 'MMMM dd, yyyy'); } catch(e) {}
@@ -142,26 +199,32 @@ export default function SharedView() {
 
   return (
     <div className="space-y-8 pb-12">
-      <div className="bg-primary-50 rounded-2xl shadow-sm border border-primary-100 p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-         <div>
-          <h2 className="text-xl sm:text-2xl font-bold text-primary-900 border-b border-primary-200 pb-2 mb-2">
-            Public Medical Report: {targetProfile?.name || 'Anonymous User'}
+      {/* Header */}
+      <div className="bg-primary-50 rounded-2xl shadow-sm border border-primary-100 p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-xl sm:text-2xl font-bold text-primary-900">
+            {targetProfile?.name || 'Patient'}'s Blood Pressure Report
           </h2>
-          <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-semibold text-primary-600 uppercase tracking-widest bg-primary-100 px-3 py-1 rounded inline-flex">
-            <Share2 className="w-3 h-3 text-blue-600" /> Public Viewer Link Active
-          </div>
+          <p className="text-sm text-primary-600 mt-1">Read-only shared view</p>
+        </div>
+        <div className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full ${
+          targetProfile?.isPublic ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'
+        }`}>
+          {targetProfile?.isPublic
+            ? <><Globe className="w-3.5 h-3.5" /> Public Link</>
+            : <><Lock className="w-3.5 h-3.5" /> Authorized View</>}
         </div>
       </div>
 
       {logs.length === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 p-12 text-center text-slate-500">
-           No readings have been recorded by this user yet.
+          No readings have been recorded by this user yet.
         </div>
       ) : (
         <>
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6">
             <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-              <Activity className="w-5 h-5 text-primary-500"/> Patient Trends
+              <Activity className="w-5 h-5 text-primary-500"/> Blood Pressure Trends
             </h3>
             <div className="w-full overflow-x-auto pb-2">
               <div className="h-64 sm:h-72 min-w-[600px] w-full">
@@ -184,42 +247,36 @@ export default function SharedView() {
                     <th className="py-3 px-6 font-medium text-center">Systolic</th>
                     <th className="py-3 px-6 font-medium text-center">Diastolic</th>
                     <th className="py-3 px-6 font-medium text-center">Pulse</th>
-                    <th className="py-3 px-6 font-medium">Categorization</th>
+                    <th className="py-3 px-6 font-medium">Category</th>
                   </tr>
                 </thead>
                 <tbody className="text-sm">
                   {Object.entries(groupedLogs).map(([date, dailyLogs]) => (
                     <React.Fragment key={date}>
                       <tr className="bg-slate-100/80 border-y border-slate-200">
-                        <td colSpan="5" className="py-3 px-6 font-bold text-slate-800 bg-slate-100">
-                          {date}
-                        </td>
+                        <td colSpan="5" className="py-3 px-6 font-bold text-slate-800 bg-slate-100">{date}</td>
                       </tr>
                       {dailyLogs.map((log) => {
                         const isHigh = log.systolic > 140 || log.diastolic > 90;
                         const isOptimal = log.systolic < 120 && log.diastolic < 80;
-                        
                         return (
                           <tr key={log.id} className={`border-b border-slate-50 last:border-0 transition-colors ${isHigh ? 'bg-red-50 hover:bg-red-100/50' : 'hover:bg-slate-50'}`}>
                             <td className="py-4 px-6 text-slate-700 whitespace-nowrap">
-                              {(() => {
-                                try { return format(new Date(log.timestamp), 'hh:mm a'); } 
-                                catch(e) { return 'Invalid Time'; }
-                              })()}
+                              {(() => { try { return format(new Date(log.timestamp), 'hh:mm a'); } catch(e) { return 'Invalid Time'; } })()}
                             </td>
                             <td className={`py-4 px-6 text-center font-bold ${isHigh ? 'text-red-700' : 'text-slate-800'}`}>{log.systolic}</td>
                             <td className={`py-4 px-6 text-center font-bold ${isHigh ? 'text-red-700' : 'text-slate-800'}`}>{log.diastolic}</td>
                             <td className="py-4 px-6 text-center text-slate-600 font-medium">{log.pulse || '-'}</td>
                             <td className="py-4 px-6">
                               <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
-                                isHigh ? 'bg-red-200 text-red-800' : 
+                                isHigh ? 'bg-red-200 text-red-800' :
                                 isOptimal ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
                               }`}>
                                 {isHigh ? 'High Range' : isOptimal ? 'Optimal' : 'Elevated'}
                               </span>
                             </td>
                           </tr>
-                        )
+                        );
                       })}
                     </React.Fragment>
                   ))}

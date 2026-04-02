@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../firebase/config';
-import { collection, query, orderBy, getDocs, doc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { Download, FileText, Calendar, Filter, Activity, Pencil, Trash2 } from 'lucide-react';
+import { collection, query, orderBy, getDocs, doc, updateDoc, deleteDoc, onSnapshot, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { Download, FileText, Calendar, Filter, Activity, Pencil, Trash2, Share2, Globe, Lock, X, Copy, Check, UserPlus } from 'lucide-react';
 import { format, subDays, isAfter, isBefore, startOfDay, endOfDay, differenceInYears } from 'date-fns';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -13,18 +13,181 @@ import { Line } from 'react-chartjs-2';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, ChartTooltip, ChartLegend);
 
+// ─── Google Drive-Style Share Modal ──────────────────────────────────────────
+function ShareModal({ userId, userName, profile, onClose }) {
+  const shareUrl = `${window.location.origin}/shared/${userId}`;
+  const isPublic = profile?.isPublic ?? false;
+  const authorizedEmails = profile?.authorizedEmails ?? [];
+
+  const [emailInput, setEmailInput] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const profileRef = doc(db, 'users', userId);
+
+  const handleAccessChange = async (pub) => {
+    setSaving(true);
+    try {
+      await updateDoc(profileRef, { isPublic: pub });
+    } catch (e) { console.error(e); }
+    finally { setSaving(false); }
+  };
+
+  const handleAddEmail = async () => {
+    const email = emailInput.trim().toLowerCase();
+    if (!email || !email.includes('@')) return;
+    if (authorizedEmails.includes(email)) { setEmailInput(''); return; }
+    setSaving(true);
+    try {
+      await updateDoc(profileRef, { authorizedEmails: arrayUnion(email) });
+      setEmailInput('');
+    } catch (e) { console.error(e); }
+    finally { setSaving(false); }
+  };
+
+  const handleRemoveEmail = async (email) => {
+    try {
+      await updateDoc(profileRef, { authorizedEmails: arrayRemove(email) });
+    } catch (e) { console.error(e); }
+  };
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(shareUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 3000);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md animate-in fade-in zoom-in-95 duration-150">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-slate-100">
+          <div>
+            <h2 className="text-lg font-bold text-slate-800">Share "{userName}'s" Report</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Manage who can view this blood pressure dashboard</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-5">
+          {/* Add People */}
+          <div>
+            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Add People</label>
+            <div className="flex gap-2">
+              <input
+                type="email"
+                value={emailInput}
+                onChange={e => setEmailInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddEmail())}
+                placeholder="Enter email address..."
+                className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+              />
+              <button
+                onClick={handleAddEmail}
+                disabled={saving}
+                className="flex-shrink-0 bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-lg transition-colors disabled:opacity-50"
+              >
+                <UserPlus className="w-4 h-4" />
+              </button>
+            </div>
+
+            {authorizedEmails.length > 0 && (
+              <div className="mt-3 space-y-1.5">
+                {authorizedEmails.map(email => (
+                  <div key={email} className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+                    <span className="text-sm text-slate-700 font-medium truncate">{email}</span>
+                    <button
+                      onClick={() => handleRemoveEmail(email)}
+                      className="ml-2 text-xs text-red-500 hover:text-red-700 font-semibold flex-shrink-0 hover:underline"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* General Access  */}
+          <div>
+            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">General Access</label>
+            <div className="border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-100">
+              <button
+                onClick={() => handleAccessChange(false)}
+                disabled={saving}
+                className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${!isPublic ? 'bg-slate-50' : 'hover:bg-slate-50'}`}
+              >
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${!isPublic ? 'bg-slate-200' : 'bg-slate-100'}`}>
+                  <Lock className={`w-4 h-4 ${!isPublic ? 'text-slate-700' : 'text-slate-400'}`} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className={`text-sm font-semibold ${!isPublic ? 'text-slate-900' : 'text-slate-600'}`}>Restricted</p>
+                  <p className="text-xs text-slate-500">Only people added above can open with the link</p>
+                </div>
+                {!isPublic && <Check className="w-4 h-4 text-slate-700 flex-shrink-0" />}
+              </button>
+
+              <button
+                onClick={() => handleAccessChange(true)}
+                disabled={saving}
+                className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${isPublic ? 'bg-blue-50' : 'hover:bg-slate-50'}`}
+              >
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${isPublic ? 'bg-blue-100' : 'bg-slate-100'}`}>
+                  <Globe className={`w-4 h-4 ${isPublic ? 'text-blue-600' : 'text-slate-400'}`} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className={`text-sm font-semibold ${isPublic ? 'text-blue-700' : 'text-slate-600'}`}>Anyone with the link</p>
+                  <p className="text-xs text-slate-500">Anyone on the internet can view without signing in</p>
+                </div>
+                {isPublic && <Check className="w-4 h-4 text-blue-600 flex-shrink-0" />}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between px-6 py-4 bg-slate-50 border-t border-slate-100 rounded-b-2xl gap-3">
+          <button
+            onClick={handleCopy}
+            className={`flex items-center gap-2 text-sm font-semibold px-4 py-2 rounded-lg border transition-all ${
+              copied ? 'bg-green-50 text-green-700 border-green-200' : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+            }`}
+          >
+            {copied ? <><Check className="w-4 h-4" />Link Copied!</> : <><Copy className="w-4 h-4" />Copy link</>}
+          </button>
+          <button
+            onClick={onClose}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm px-6 py-2 rounded-lg transition-colors"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function History() {
   const { currentUser, userProfile } = useAuth();
   const [allLogs, setAllLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const printRef = useRef();
-  
+
+  // Share modal state
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareProfile, setShareProfile] = useState(null);
+
   // Edit State
   const [editingLog, setEditingLog] = useState(null);
 
   // Date Range State
-  const [rangeType, setRangeType] = useState('30days'); // '30days' | 'custom'
+  const [rangeType, setRangeType] = useState('30days');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
 
@@ -40,7 +203,7 @@ export default function History() {
         const fetchedLogs = querySnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
-        })).filter(log => log.timestamp); // Ensure we only keep logs with valid timestamps
+        })).filter(log => log.timestamp);
         setAllLogs(fetchedLogs);
       } catch (err) {
         console.error('Error fetching logs:', err);
@@ -49,6 +212,15 @@ export default function History() {
       }
     }
     fetchLogs();
+  }, [currentUser]);
+
+  // Live-sync the user's share profile so modal always shows current state
+  useEffect(() => {
+    if (!currentUser) return;
+    const unsub = onSnapshot(doc(db, 'users', currentUser.uid), (snap) => {
+      if (snap.exists()) setShareProfile(snap.data());
+    });
+    return () => unsub();
   }, [currentUser]);
 
   // Filter logs based on date range
@@ -295,7 +467,16 @@ export default function History() {
 
   return (
     <div className="space-y-8 pb-12">
-      
+
+      {showShareModal && (
+        <ShareModal
+          userId={currentUser?.uid}
+          userName={userProfile?.name || 'My'}
+          profile={shareProfile}
+          onClose={() => setShowShareModal(false)}
+        />
+      )}
+
       {/* Top Header & Report Configurations */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
@@ -303,33 +484,47 @@ export default function History() {
             <h2 className="text-2xl font-bold text-slate-800">History & Reports</h2>
             <p className="text-slate-500 mt-1 text-sm">Analyze trends and generate PDF reports for your doctor.</p>
           </div>
-          
-          <div className="flex flex-col sm:flex-row items-end sm:items-center gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100 w-full md:w-auto">
-            <div className="flex items-center gap-2 text-sm text-slate-700">
-              <Filter className="w-4 h-4" />
-              <select 
-                value={rangeType} onChange={e => setRangeType(e.target.value)}
-                className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500"
-              >
-                <option value="30days">Last 30 Days</option>
-                <option value="custom">Custom Range</option>
-              </select>
-            </div>
 
-            {rangeType === 'custom' && (
-              <div className="flex items-center gap-2 text-sm">
-                <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} className="bg-white border border-slate-200 rounded-lg px-2 py-1.5" />
-                <span className="text-slate-400">-</span>
-                <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} className="bg-white border border-slate-200 rounded-lg px-2 py-1.5" />
+          <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3 w-full md:w-auto">
+            <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3 bg-slate-50 p-4 rounded-xl border border-slate-100 w-full">
+              <div className="flex items-center gap-2 text-sm text-slate-700">
+                <Filter className="w-4 h-4" />
+                <select
+                  value={rangeType} onChange={e => setRangeType(e.target.value)}
+                  className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                >
+                  <option value="30days">Last 30 Days</option>
+                  <option value="custom">Custom Range</option>
+                </select>
               </div>
-            )}
 
-            <button 
-              onClick={generatePDF} disabled={generating || filteredLogs.length === 0}
-              className="bg-primary-600 hover:bg-primary-700 text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center gap-2 shadow-sm disabled:opacity-50 whitespace-nowrap w-full sm:w-auto justify-center"
-            >
-              {generating ? <span className="animate-pulse">Building PDF...</span> : <><Download className="w-4 h-4" /> Generate Report</>}
-            </button>
+              {rangeType === 'custom' && (
+                <div className="flex items-center gap-2 text-sm">
+                  <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} className="bg-white border border-slate-200 rounded-lg px-2 py-1.5" />
+                  <span className="text-slate-400">-</span>
+                  <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} className="bg-white border border-slate-200 rounded-lg px-2 py-1.5" />
+                </div>
+              )}
+
+              <div className="flex gap-2 w-full sm:w-auto">
+                <button
+                  onClick={() => setShowShareModal(true)}
+                  className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 font-medium py-2 px-3 rounded-lg transition-colors shadow-sm text-sm"
+                  title="Share Report"
+                >
+                  {shareProfile?.isPublic
+                    ? <Globe className="w-4 h-4 text-blue-600" />
+                    : <Share2 className="w-4 h-4" />}
+                  Share
+                </button>
+                <button
+                  onClick={generatePDF} disabled={generating || filteredLogs.length === 0}
+                  className="bg-primary-600 hover:bg-primary-700 text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center gap-2 shadow-sm disabled:opacity-50 whitespace-nowrap flex-1 sm:flex-none justify-center"
+                >
+                  {generating ? <span className="animate-pulse">Building PDF...</span> : <><Download className="w-4 h-4" /> Generate Report</>}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
