@@ -23,7 +23,21 @@
     <meta property="og:type" content="website" />
     
     <style>
+      /* Initial state */
       body { margin: 0; background-color: #ffffff; }
+      #app-splash { display: none; }
+      
+      /* Active state for Standalone PWA only */
+      html.is-standalone #app-splash { 
+        display: flex; 
+        align-items: center; 
+        justify-content: center; 
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        background-color: #ffffff; 
+      }
+      
       @keyframes bply-heartbeat {
         0%, 100% { transform: scale(1); opacity: 1; }
         15% { transform: scale(1.15); opacity: 0.9; }
@@ -31,20 +45,28 @@
         45% { transform: scale(1.15); opacity: 0.9; }
         60%, 100% { transform: scale(1); opacity: 1; }
       }
-      .splash-container { display: flex; align-items: center; justify-content: center; min-height: 100vh; background-color: #ffffff; margin: 0; }
-      .splash-logo { animation: bply-heartbeat 1.5s ease-in-out infinite; width: 72px; height: 72px; }
+      .splash-logo { 
+        animation: bply-heartbeat 1.5s ease-in-out infinite; 
+        width: 100px; 
+        height: 100px; 
+        border-radius: 20%; 
+        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+      }
     </style>
+    <script>
+      (function() {
+        if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
+          document.documentElement.classList.add('is-standalone');
+        }
+      })();
+    </script>
     <title>BPly - Blood Pressure Monitor</title>
   </head>
   <body>
-    <div id="root">
-      <div class="splash-container">
-        <svg class="splash-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-          <rect width="32" height="32" rx="7" fill="#2563eb"/>
-          <path d="M4 16h4.5l3-8 5.5 16 3.5-10.5 2 4.5H28" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-        </svg>
-      </div>
+    <div id="app-splash">
+      <img src="/maskable-icon.svg" class="splash-logo" alt="BPly Splash Bootloader" />
     </div>
+    <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

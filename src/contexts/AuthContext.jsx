@@ -14,23 +14,30 @@ export function AuthProvider({ children }) {
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Check if we're in standalone mode (installed PWA)
+  const isStandalone = typeof window !== 'undefined' && 
+    (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        // Fetch user profile from Firestore to see if they're onboarded
-        const docRef = doc(db, 'users', user.uid);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          setUserProfile(docSnap.data());
-        } else {
-          setUserProfile(null);
-        }
-        setCurrentUser(user);
+      // INSTANT HANDSHAKE: Resolve the global loading block the millisecond Firebase answers.
+      setCurrentUser(user || null);
+      if (!user) {
+        setUserProfile(null);
+        setLoading(false);
+        return;
+      }
+
+      setLoading(false); // Unblock immediately
+
+      // Fetch user profile silently in the background
+      const docRef = doc(db, 'users', user.uid);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        setUserProfile(docSnap.data());
       } else {
         setUserProfile(null);
-        setCurrentUser(null);
       }
-      setLoading(false);
     });
 
     return unsubscribe;
@@ -39,19 +46,18 @@ export function AuthProvider({ children }) {
   const value = {
     currentUser,
     userProfile,
-    setUserProfile, // To update after onboarding
+    setUserProfile, 
     loading
   };
 
   return (
     <AuthContext.Provider value={value}>
       {loading ? (
-        <div className="flex items-center justify-center min-h-screen bg-white m-0">
-          <svg className="w-[72px] h-[72px] animate-[bply-heartbeat_1.5s_ease-in-out_infinite]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-            <rect width="32" height="32" rx="7" fill="#2563eb"/>
-            <path d="M4 16h4.5l3-8 5.5 16 3.5-10.5 2 4.5H28" stroke="#ffffff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
-          </svg>
-        </div>
+        isStandalone ? (
+          <div className="flex items-center justify-center min-h-screen bg-white m-0 fixed inset-0 z-[99999]">
+            <img src="/maskable-icon.svg" className="w-[100px] h-[100px] rounded-[20%] shadow-[0_4px_12px_rgba(37,99,235,0.2)] animate-[bply-heartbeat_1.5s_ease-in-out_infinite]" alt="BPly Booting" />
+          </div>
+        ) : null // Fall back to empty node on Desktop Web while bridging
       ) : children}
     </AuthContext.Provider>
   );
