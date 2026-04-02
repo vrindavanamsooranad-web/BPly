@@ -35,9 +35,9 @@ export default function SharedView() {
 
         const profileData = profileSnap.data();
         
-        // Strict Privacy Rule Check on the Front-end
-        if (!profileData.isShared) {
-          setError("This dashboard is fully private. The owner has not enabled public link sharing.");
+        // Strict Privacy Rule Check on the Front-end (matches isPublic Firestore flag)
+        if (!profileData.isPublic) {
+          setError("This link has been deactivated by the owner.");
           setLoading(false);
           return;
         }

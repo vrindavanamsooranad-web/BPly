@@ -45,7 +45,7 @@ export default function Settings() {
   const toggleSharing = async () => {
     try {
       const patientRef = doc(db, 'users', currentUser.uid);
-      await updateDoc(patientRef, { isShared: !profile?.isShared });
+      await updateDoc(patientRef, { isPublic: !profile?.isPublic });
     } catch (err) {
       alert("Failed to update privacy settings.");
     }
@@ -125,18 +125,18 @@ export default function Settings() {
             
             <button 
               onClick={toggleSharing}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${profile?.isShared ? 'bg-primary-500' : 'bg-slate-200'}`}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${profile?.isPublic ? 'bg-primary-500' : 'bg-slate-200'}`}
             >
-              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${profile?.isShared ? 'translate-x-6' : 'translate-x-1'}`} />
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${profile?.isPublic ? 'translate-x-6' : 'translate-x-1'}`} />
             </button>
           </div>
           <p className="text-sm text-slate-500 mb-4">
-            {profile?.isShared 
+            {profile?.isPublic 
               ? "Your data is currently accessible via your direct shared link." 
               : "Enable this to allow anyone with your unique URL to view your dashboard."}
           </p>
           
-          {profile?.isShared && (
+          {profile?.isPublic && (
             <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl">
               <p className="text-xs font-semibold text-blue-800 mb-1">Your Public Dashboard Link:</p>
               <a href={`/shared/${currentUser?.uid}`} target="_blank" rel="noreferrer" className="text-sm break-all font-medium text-blue-600 hover:underline">
