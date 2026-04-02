@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../firebase/config';
 import { collection, addDoc } from 'firebase/firestore';
-import { Activity } from 'lucide-react';
+import { Activity, Share2, Check } from 'lucide-react';
 
 export default function Dashboard() {
   const { currentUser, userProfile } = useAuth();
@@ -13,6 +13,7 @@ export default function Dashboard() {
   const [dateTime, setDateTime] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [copiedLink, setCopiedLink] = useState(false);
 
   // Set default datetime to local time (YYYY-MM-DDThh:mm)
   useEffect(() => {
@@ -34,7 +35,8 @@ export default function Dashboard() {
         systolic: Number(systolic),
         diastolic: Number(diastolic),
         pulse: pulse ? Number(pulse) : null,
-        timestamp: new Date(dateTime).toISOString()
+        timestamp: new Date(dateTime).toISOString(),
+        shareId: currentUser.uid
       });
       setSystolic('');
       setDiastolic('');
@@ -52,6 +54,13 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleShare = () => {
+    const url = `${window.location.origin}/shared/${currentUser?.uid}`;
+    navigator.clipboard.writeText(url);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 3000);
   };
 
   return (
@@ -119,6 +128,20 @@ export default function Dashboard() {
             {loading ? 'Saving...' : 'Save Reading'}
           </button>
         </form>
+
+        <div className="pt-6 mt-6 border-t border-slate-100">
+          <button 
+            onClick={handleShare}
+            className={`w-full font-semibold flex items-center justify-center gap-2 py-3 px-4 rounded-xl transition-all border-2 ${copiedLink ? 'bg-green-50 text-green-700 border-green-200' : 'bg-white text-primary-600 hover:bg-primary-50 border-primary-100 hover:border-primary-200'}`}
+          >
+            {copiedLink ? (
+               <><Check className="w-5 h-5" /> Copied Public Link!</>
+            ) : (
+               <><Share2 className="w-5 h-5" /> Copy Shareable Report Link</>
+            )}
+          </button>
+          <p className="text-xs text-center text-slate-400 mt-3">Anyone with this link can view your blood pressure history.</p>
+        </div>
       </div>
     </div>
   );
