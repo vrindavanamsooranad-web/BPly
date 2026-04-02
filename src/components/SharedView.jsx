@@ -36,9 +36,8 @@ export default function SharedView() {
         const profileData = profileSnap.data();
         setTargetProfile(profileData);
 
-        // Does the current viewer have active tracking?
         const viewers = profileData.authorized_viewers || {};
-        const isAuth = currentUser && viewers[currentUser.uid];
+        const isAuth = currentUser ? viewers[currentUser.uid] : false;
         setIsAuthorized(!!isAuth);
 
         // Safe Data Fetching (Bypass Auth requirement)
@@ -262,21 +261,31 @@ export default function SharedView() {
             </div>
           </div>
 
-          {/* Add to Family Call to Action (Only for logged-in authorized-capable users) */}
-          {currentUser && currentUser.uid !== userId && !isAuthorized && (
+          {/* Add to Family Call to Action (Shown to ALL unconnected users) */}
+          {currentUser?.uid !== userId && !isAuthorized && (
             <div className="bg-slate-800 rounded-2xl shadow-sm border border-slate-700 p-8 text-center mt-12 animate-in fade-in slide-in-from-bottom-4">
               <ShieldCheck className="w-12 h-12 text-blue-400 mx-auto mb-4" />
               <h2 className="text-xl font-bold text-white mb-2">Add to Family Dashboard</h2>
               <p className="text-slate-300 mb-6 max-w-md mx-auto text-sm">
                 You are currently viewing this report anonymously. Add {targetProfile?.name || 'this patient'} to your Family Dashboard to monitor their health records securely in real-time.
               </p>
-              <button 
-                onClick={handleAddToFamily}
-                disabled={addingToFamily}
-                className={`font-bold px-8 py-3 rounded-xl transition-colors ${addingToFamily ? 'bg-slate-600 text-slate-400' : 'bg-blue-500 text-white hover:bg-blue-600'}`}
-              >
-                {addingToFamily ? 'Connecting...' : 'Establish Secure Link'}
-              </button>
+              
+              {currentUser ? (
+                <button 
+                  onClick={handleAddToFamily}
+                  disabled={addingToFamily}
+                  className={`font-bold px-8 py-3 rounded-xl transition-colors ${addingToFamily ? 'bg-slate-600 text-slate-400' : 'bg-blue-500 text-white hover:bg-blue-600'}`}
+                >
+                  {addingToFamily ? 'Connecting...' : 'Establish Secure Link'}
+                </button>
+              ) : (
+                <button 
+                  onClick={() => window.location.href = `/login?redirect=/shared/${userId}`}
+                  className="font-bold px-8 py-3 rounded-xl transition-colors bg-blue-500 text-white hover:bg-blue-600"
+                >
+                  Log In to Setup Family Link
+                </button>
+              )}
             </div>
           )}
         </>

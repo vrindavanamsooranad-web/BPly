@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useNavigate, Navigate } from 'react-router-dom';
+import { useNavigate, Navigate, useLocation } from 'react-router-dom';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup } from 'firebase/auth';
 import { auth, googleProvider } from '../firebase/config';
 
@@ -12,9 +12,14 @@ export default function Login() {
   
   const { currentUser, userProfile } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  
+  // Extract custom redirect path, if an anonymous viewer clicked the Add button
+  const queryParams = new URLSearchParams(location.search);
+  const redirectTarget = queryParams.get('redirect');
 
   if (currentUser) {
-    if (userProfile) return <Navigate to="/dashboard" />;
+    if (userProfile) return <Navigate to={redirectTarget || "/dashboard"} />;
     return <Navigate to="/onboarding" />;
   }
 
