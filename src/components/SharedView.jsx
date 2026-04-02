@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { db } from '../firebase/config';
-import { collection, query, orderBy, getDocs, doc, getDoc } from 'firebase/firestore';
-import { Activity, Calendar, Lock, AlertTriangle } from 'lucide-react';
+import { collection, query, orderBy, getDocs, doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore';
+import { Activity, Calendar, Lock, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { format } from 'date-fns';
+import { useAuth } from '../contexts/AuthContext';
 
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip as ChartTooltip, Legend as ChartLegend } from 'chart.js';
 import { Line } from 'react-chartjs-2';
@@ -12,47 +13,82 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, C
 
 export default function SharedView() {
   const { userId } = useParams();
+  const { currentUser, userProfile } = useAuth();
   
   const [logs, setLogs] = useState([]);
   const [targetProfile, setTargetProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
   useEffect(() => {
-    async function loadSharedData() {
-      try {
-        const profileRef = doc(db, 'users', userId);
-        const profileSnap = await getDoc(profileRef);
-        
-        if (!profileSnap.exists()) {
-          setError("This URL parameter maps to a deleted or protected user structure.");
-          setLoading(false);
-          return;
-        }
+    if (!userId) return;
 
-        const profileData = profileSnap.data();
-        setTargetProfile(profileData);
-
-        const q = query(
-          collection(db, `users/${userId}/logs`),
-          orderBy('timestamp', 'desc')
-        );
-        const querySnapshot = await getDocs(q);
-        const fetchedLogs = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })).filter(log => log.timestamp);
-        
-        setLogs(fetchedLogs);
-      } catch (err) {
-        console.error("Shared Access Network Error:", err);
-        setError("Missing Server Side rule. The Firebase Administrator must accurately assign 'allow read: if true;' to the /logs structure via console.");
-      } finally {
+    // Real-time listener for patient's profile to handle instant revocation
+    const profileRef = doc(db, 'users', userId);
+    const unsubscribeProfile = onSnapshot(profileRef, async (profileSnap) => {
+      if (!profileSnap.exists()) {
+        setError("This URL parameter maps to a deleted structure.");
         setLoading(false);
+        return;
       }
+
+      const profileData = profileSnap.data();
+      setTargetProfile(profileData);
+
+      // Security check
+      const viewers = profileData.authorized_viewers || {};
+      const isAuth = currentUser && viewers[currentUser.uid];
+      
+      if (currentUser?.uid === userId || isAuth) {
+        setIsAuthorized(true);
+        // Only fetch logs once authorized
+        try {
+          const q = query(collection(db, `users/${userId}/logs`), orderBy('timestamp', 'desc'));
+          const querySnapshot = await getDocs(q);
+          const fetchedLogs = querySnapshot.docs.map(ds => ({ id: ds.id, ...ds.data() })).filter(log => log.timestamp);
+          setLogs(fetchedLogs);
+        } catch (err) {
+          setError("Permission Denied reading logs.");
+        }
+      } else {
+        setIsAuthorized(false);
+      }
+      setLoading(false);
+    }, (err) => {
+      setError("Failed to monitor security rules.");
+      setLoading(false);
+    });
+
+    return () => unsubscribeProfile();
+  }, [userId, currentUser]);
+
+  const handleAddToFamily = async () => {
+    if (!currentUser) return;
+    setAddingToFamily(true);
+    try {
+      const patientRef = doc(db, 'users', userId);
+      await updateDoc(patientRef, {
+        [`authorized_viewers.${currentUser.uid}`]: {
+          name: userProfile?.name || currentUser.email,
+          email: currentUser.email,
+          addedAt: new Date().toISOString()
+        }
+      });
+
+      const guardianRef = doc(db, 'users', currentUser.uid);
+      await updateDoc(guardianRef, {
+        [`familyMembers.${userId}`]: {
+          name: targetProfile?.name || 'Unknown Patient',
+          addedAt: new Date().toISOString()
+        }
+      });
+
+      setIsAuthorized(true);
+      window.location.reload();
+    } catch (err) {
+      console.error(err);
+      setError("Failed to establish secure link. Firebase permission missing.");
+    } finally {
+      setAddingToFamily(false);
     }
-    loadSharedData();
-  }, [userId]);
+  };
 
   if (loading) {
     return (
@@ -118,17 +154,40 @@ export default function SharedView() {
       <div className="bg-primary-50 rounded-2xl shadow-sm border border-primary-100 p-6 flex items-start gap-4 flex-col sm:flex-row">
          <div>
           <h2 className="text-xl sm:text-2xl font-bold text-primary-900 border-b border-primary-200 pb-2 mb-2">
-            Viewing Medical Dashboard: {targetProfile?.name || 'Anonymous User'}
+            Patient Identity: {targetProfile?.name || 'Anonymous User'}
           </h2>
           <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-semibold text-primary-600 uppercase tracking-widest bg-primary-100 px-3 py-1 rounded inline-flex">
-            <Lock className="w-3 h-3" /> Anonymous Read-Only Public Node
+            {isAuthorized ? <ShieldCheck className="w-3 h-3" /> : <Lock className="w-3 h-3" />} 
+            {isAuthorized ? 'Secure Family Viewer Connected' : 'Authorization Required'}
           </div>
         </div>
       </div>
 
-      {logs.length === 0 ? (
+      {!isAuthorized ? (
+        <div className="bg-white rounded-xl border border-slate-200 p-12 text-center shadow-sm">
+          <Lock className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-slate-800 mb-2">Protected Medical Data</h2>
+          <p className="text-slate-500 mb-8 max-w-md mx-auto">
+            {targetProfile?.name || 'This user'}'s health dashboard requires end-to-end authorization. 
+            {currentUser ? ' Establish a secure link to add them to your Family Dashboard.' : ' Please log in to request or establish a secure link.'}
+          </p>
+          {currentUser ? (
+            <button 
+              onClick={handleAddToFamily}
+              disabled={addingToFamily}
+              className={`font-bold px-8 py-3 rounded-xl transition-colors ${addingToFamily ? 'bg-slate-300 text-slate-600' : 'bg-primary-600 text-white hover:bg-primary-700'}`}
+            >
+              {addingToFamily ? 'Establishing Link...' : 'Add to My Family Dashboard'}
+            </button>
+          ) : (
+            <a href="/login" className="inline-block bg-primary-600 text-white font-bold px-8 py-3 rounded-xl hover:bg-primary-700 transition-colors">
+              Log In to Authorize
+            </a>
+          )}
+        </div>
+      ) : logs.length === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 p-12 text-center text-slate-500">
-           No readings have been recorded by this user yet.
+           No readings have been recorded by this patient yet.
         </div>
       ) : (
         <>

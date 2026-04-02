@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { db, auth } from '../firebase/config';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, updateDoc, deleteField } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { User, Mail, Calendar, LogOut, ShieldCheck } from 'lucide-react';
-import { differenceInYears } from 'date-fns';
+import { differenceInYears, format as fnsFormat } from 'date-fns';
 
 function ProfileField({ icon: Icon, label, value }) {
   return (
@@ -26,25 +26,33 @@ export default function Settings() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function fetchProfile() {
-      if (!currentUser) return;
-      try {
-        const docRef = doc(db, 'users', currentUser.uid);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          setProfile(docSnap.data());
-        } else {
-          // Fall back to whatever the AuthContext already loaded
-          setProfile(userProfile);
-        }
-      } catch (err) {
+    if (!currentUser) return;
+    const docRef = doc(db, 'users', currentUser.uid);
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setProfile(docSnap.data());
+      } else {
         setProfile(userProfile);
-      } finally {
-        setLoading(false);
       }
-    }
-    fetchProfile();
+      setLoading(false);
+    }, (err) => {
+      setProfile(userProfile);
+      setLoading(false);
+    });
+    return () => unsubscribe();
   }, [currentUser, userProfile]);
+
+  const handleRevokeAccess = async (guardianId, guardianName) => {
+    if (!window.confirm(`Are you sure you want to revoke ${guardianName}'s access to your medical data?`)) return;
+    try {
+      const patientRef = doc(db, 'users', currentUser.uid);
+      const guardianRef = doc(db, 'users', guardianId);
+      await updateDoc(patientRef, { [`authorized_viewers.${guardianId}`]: deleteField() });
+      await updateDoc(guardianRef, { [`familyMembers.${currentUser.uid}`]: deleteField() });
+    } catch (err) {
+      alert("Revocation failed. Missing Firebase permissions.");
+    }
+  };
 
   if (loading) {
     return (
@@ -108,6 +116,38 @@ export default function Settings() {
         {/* Info notice */}
         <div className="mx-6 mb-4 mt-2 px-4 py-3 bg-blue-50 rounded-xl border border-blue-100 text-xs text-blue-600 font-medium">
           Profile details are set during initial onboarding. Contact support to update your information.
+        </div>
+
+        {/* Data Sharing Control Pane */}
+        <div className="px-6 py-6 border-t border-slate-100">
+          <div className="flex items-center gap-2 mb-4">
+            <ShieldCheck className="w-5 h-5 text-primary-500" />
+            <h2 className="text-lg font-bold text-slate-800">Data Sharing Privacy</h2>
+          </div>
+          <p className="text-sm text-slate-500 mb-6">These family members currently have access to your Blood Pressure Dashboard. You can instantly revoke this access at any time.</p>
+          
+          {!profile?.authorized_viewers || Object.keys(profile.authorized_viewers).length === 0 ? (
+            <div className="text-center p-6 bg-slate-50 rounded-xl border border-slate-100 text-sm text-slate-400">
+              Your dashboard is fully private.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {Object.entries(profile.authorized_viewers).map(([guardianId, data]) => (
+                <div key={guardianId} className="flex items-center justify-between p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
+                  <div>
+                    <p className="text-sm font-bold text-slate-800">{data.name}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">{data.email || 'Email hidden'} · Added {data.addedAt ? fnsFormat(new Date(data.addedAt), 'MMM dd') : 'Unknown'}</p>
+                  </div>
+                  <button 
+                    onClick={() => handleRevokeAccess(guardianId, data.name)}
+                    className="text-xs font-bold bg-white text-red-600 border border-red-200 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
+                  >
+                    Revoke Access
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Sign Out */}
