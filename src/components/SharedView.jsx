@@ -5,6 +5,7 @@ import { auth } from '../firebase/config';
 import { collection, query, orderBy, getDocs, doc, getDoc } from 'firebase/firestore';
 import { Activity, Calendar, AlertTriangle, Globe, Lock, LogIn } from 'lucide-react';
 import { format } from 'date-fns';
+import { getAHAStyles } from '../utils/bpClassify';
 
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip as ChartTooltip, Legend as ChartLegend } from 'chart.js';
 import { Line } from 'react-chartjs-2';
@@ -257,22 +258,18 @@ export default function SharedView() {
                         <td colSpan="5" className="py-3 px-6 font-bold text-slate-800 bg-slate-100">{date}</td>
                       </tr>
                       {dailyLogs.map((log) => {
-                        const isHigh = log.systolic > 140 || log.diastolic > 90;
-                        const isOptimal = log.systolic < 120 && log.diastolic < 80;
+                        const aha = getAHAStyles(log.systolic, log.diastolic);
                         return (
-                          <tr key={log.id} className={`border-b border-slate-50 last:border-0 transition-colors ${isHigh ? 'bg-red-50 hover:bg-red-100/50' : 'hover:bg-slate-50'}`}>
+                          <tr key={log.id} className={`border-b border-slate-50 last:border-0 transition-colors ${aha.row}`}>
                             <td className="py-4 px-6 text-slate-700 whitespace-nowrap">
                               {(() => { try { return format(new Date(log.timestamp), 'hh:mm a'); } catch(e) { return 'Invalid Time'; } })()}
                             </td>
-                            <td className={`py-4 px-6 text-center font-bold ${isHigh ? 'text-red-700' : 'text-slate-800'}`}>{log.systolic}</td>
-                            <td className={`py-4 px-6 text-center font-bold ${isHigh ? 'text-red-700' : 'text-slate-800'}`}>{log.diastolic}</td>
+                            <td className={`py-4 px-6 text-center font-bold ${aha.numText}`}>{log.systolic}</td>
+                            <td className={`py-4 px-6 text-center font-bold ${aha.numText}`}>{log.diastolic}</td>
                             <td className="py-4 px-6 text-center text-slate-600 font-medium">{log.pulse || '-'}</td>
                             <td className="py-4 px-6">
-                              <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
-                                isHigh ? 'bg-red-200 text-red-800' :
-                                isOptimal ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
-                              }`}>
-                                {isHigh ? 'High Range' : isOptimal ? 'Optimal' : 'Elevated'}
+                              <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${aha.badge}`}>
+                                {aha.label}
                               </span>
                             </td>
                           </tr>

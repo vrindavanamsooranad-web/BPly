@@ -7,6 +7,7 @@ import { format, subDays, isAfter, isBefore, startOfDay, endOfDay, differenceInY
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
+import { classifyBP, getAHAStyles } from '../utils/bpClassify';
 
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip as ChartTooltip, Legend as ChartLegend } from 'chart.js';
 import { Line } from 'react-chartjs-2';
@@ -76,7 +77,10 @@ function ShareModal({ userId, userName, profile, onClose }) {
 
         <div className="px-6 py-5 space-y-5">
           {/* Add People */}
-          <div>
+          <div className={isPublic ? 'opacity-40 pointer-events-none select-none' : ''}>
+            {isPublic && (
+              <p className="mb-3 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">🌐 Public access is on — email restrictions are inactive while anyone-with-link is enabled.</p>
+            )}
             <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Add People</label>
             <div className="flex gap-2">
               <input
@@ -280,6 +284,32 @@ export default function History() {
       
       pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
 
+      // ── AHA Executive Summary Box ────────────────────────────────────────
+      try {
+        const sevenDaysAgo = subDays(new Date(), 7);
+        const sevenDayLogs = allLogs.filter(l => { try { return l.timestamp && isAfter(new Date(l.timestamp), sevenDaysAgo); } catch { return false; } });
+        const avgSys = sevenDayLogs.length > 0 ? Math.round(sevenDayLogs.reduce((s, l) => s + (l.systolic || 0), 0) / sevenDayLogs.length) : null;
+        const avgDia = sevenDayLogs.length > 0 ? Math.round(sevenDayLogs.reduce((s, l) => s + (l.diastolic || 0), 0) / sevenDayLogs.length) : null;
+        const avgCat = avgSys && avgDia ? classifyBP(avgSys, avgDia) : null;
+        const bx = 15, by = pdfHeight + 8, bw = pdfWidth - 30, bh = 42;
+        pdf.setFillColor(248, 250, 252);
+        pdf.rect(bx, by, bw, bh, 'F');
+        pdf.setDrawColor(226, 232, 240); pdf.setLineWidth(0.3);
+        pdf.rect(bx, by, bw, bh, 'S');
+        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(7.5); pdf.setTextColor(100, 116, 139);
+        pdf.text('EXECUTIVE SUMMARY — 7-DAY OVERVIEW', bx + 4, by + 8);
+        pdf.setFontSize(9); pdf.setTextColor(15, 23, 42);
+        const r1 = by + 18, r2 = by + 30, c1 = bx + 4, c2 = bx + 97;
+        pdf.setFont('helvetica', 'bold'); pdf.text('7-Day Average:', c1, r1);
+        pdf.setFont('helvetica', 'normal'); pdf.text(avgSys && avgDia ? `${avgSys} / ${avgDia} mmHg` : 'Insufficient data', c1 + 36, r1);
+        pdf.setFont('helvetica', 'bold'); pdf.text('AHA Category:', c2, r1);
+        pdf.setFont('helvetica', 'normal'); pdf.text(avgCat ? avgCat.label : 'N/A', c2 + 34, r1);
+        pdf.setFont('helvetica', 'bold'); pdf.text('Log Count:', c1, r2);
+        pdf.setFont('helvetica', 'normal'); pdf.text(`${filteredLogs.length} readings in selected period`, c1 + 25, r2);
+        pdf.setFont('helvetica', 'bold'); pdf.text('Report Period:', c2, r2);
+        pdf.setFont('helvetica', 'normal'); pdf.text(reportDateRange, c2 + 34, r2);
+      } catch (summaryErr) { console.warn('Summary box skipped:', summaryErr); }
+
       // Inject actual log registry directly using autoTable to prevent page cutoffs
       const tableBody = [];
       Object.entries(groupedLogs).forEach(([date, logs]) => {
@@ -301,7 +331,7 @@ export default function History() {
       });
 
       autoTable(pdf, {
-        startY: pdfHeight + 10,
+        startY: pdfHeight + 58,
         head: [['Time', 'Systolic', 'Diastolic', 'Pulse', 'Alerts']],
         body: tableBody,
         theme: 'grid',
@@ -576,26 +606,18 @@ export default function History() {
                       </tr>
                       {/* Logs for this date */}
                       {logs.map((log) => {
-                        const isHigh = log.systolic > 140 || log.diastolic > 90;
-                        const isOptimal = log.systolic < 120 && log.diastolic < 80;
-                        
+                        const aha = getAHAStyles(log.systolic, log.diastolic);
                         return (
-                          <tr key={log.id} className={`border-b border-slate-50 last:border-0 transition-colors ${isHigh ? 'bg-red-50 hover:bg-red-100/50' : 'hover:bg-slate-50'}`}>
+                          <tr key={log.id} className={`border-b border-slate-50 last:border-0 transition-colors ${aha.row}`}>
                             <td className="py-4 px-6 text-slate-700 whitespace-nowrap">
-                              {(() => {
-                                try { return format(new Date(log.timestamp), 'hh:mm a'); } 
-                                catch(e) { return 'Invalid Time'; }
-                              })()}
+                              {(() => { try { return format(new Date(log.timestamp), 'hh:mm a'); } catch(e) { return 'Invalid Time'; } })()}
                             </td>
-                            <td className={`py-4 px-6 text-center font-bold ${isHigh ? 'text-red-700' : 'text-slate-800'}`}>{log.systolic}</td>
-                            <td className={`py-4 px-6 text-center font-bold ${isHigh ? 'text-red-700' : 'text-slate-800'}`}>{log.diastolic}</td>
+                            <td className={`py-4 px-6 text-center font-bold ${aha.numText}`}>{log.systolic}</td>
+                            <td className={`py-4 px-6 text-center font-bold ${aha.numText}`}>{log.diastolic}</td>
                             <td className="py-4 px-6 text-center text-slate-600 font-medium">{log.pulse || '-'}</td>
                             <td className="py-4 px-6">
-                              <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
-                                isHigh ? 'bg-red-200 text-red-800' : 
-                                isOptimal ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
-                              }`}>
-                                {isHigh ? 'High (Stage 2+)' : isOptimal ? 'Optimal' : 'Elevated / Stage 1'}
+                              <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${aha.badge}`}>
+                                {aha.label}
                               </span>
                             </td>
                             <td className="py-4 px-6 text-center">
