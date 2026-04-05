@@ -23,5 +23,7 @@ export function getAHAStyles(systolic, diastolic) {
     stage2:   { badge: 'bg-red-100 text-red-700',                  row: 'bg-red-50 hover:bg-red-100/50',   numText: 'text-red-700' },
     crisis:   { badge: 'bg-red-900 text-red-100 animate-pulse',    row: 'bg-red-100 hover:bg-red-200/50',  numText: 'text-red-900 font-black' },
   };
-  return { label, color, ...map[color] };
+  // Defensive: fall back to normal if color key is missing (prevents spread of undefined)
+  const styles = map[color] ?? map.normal;
+  return { label, color, ...styles };
 }

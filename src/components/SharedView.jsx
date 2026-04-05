@@ -174,19 +174,21 @@ export default function SharedView() {
     datasets: [
       {
         label: 'Systolic',
-        data: chartDataLogs.map(log => log.systolic),
+        data: chartDataLogs.map(log => (log.systolic != null ? Number(log.systolic) : null)),
         borderColor: 'rgb(239, 68, 68)',
         backgroundColor: 'rgba(239, 68, 68, 0.5)',
         tension: 0.3,
         pointRadius: 4,
+        spanGaps: true,
       },
       {
         label: 'Diastolic',
-        data: chartDataLogs.map(log => log.diastolic),
+        data: chartDataLogs.map(log => (log.diastolic != null ? Number(log.diastolic) : null)),
         borderColor: 'rgb(59, 130, 246)',
         backgroundColor: 'rgba(59, 130, 246, 0.5)',
         tension: 0.3,
         pointRadius: 4,
+        spanGaps: true,
       }
     ]
   };

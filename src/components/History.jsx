@@ -374,7 +374,13 @@ export default function History() {
           let timeStr = '-';
           try { timeStr = format(new Date(log.timestamp), 'hh:mm a'); } catch(e) {}
           const cat = classifyBP(log.systolic, log.diastolic);
-          tableBody.push([timeStr, log.systolic.toString(), log.diastolic.toString(), log.pulse ? log.pulse.toString() : '-', cat.label]);
+          tableBody.push([
+            timeStr,
+            (log.systolic ?? '—').toString(),
+            (log.diastolic ?? '—').toString(),
+            log.pulse ? log.pulse.toString() : '-',
+            cat.label
+          ]);
         });
       });
 
@@ -388,8 +394,9 @@ export default function History() {
         margin: { left: lm, right: lm, top: 15, bottom: 20 },
         pageBreak: 'auto',
         didParseCell(data) {
-          if (data.section === 'body' && data.col.index === 4 && data.row.raw.length > 1) {
-            const cat = data.cell.raw;
+          if (data.section === 'body' && data.col?.index === 4 && (data.row?.raw?.length ?? 0) > 1) {
+            const cat = data.cell?.raw;
+            if (!cat) return;
             if (cat === 'Hypertensive Crisis')    { data.cell.styles.textColor = [127, 0, 0];   data.cell.styles.fontStyle = 'bold'; }
             else if (cat === 'Stage 2 Hypertension') { data.cell.styles.textColor = [185, 28, 28]; data.cell.styles.fontStyle = 'bold'; }
             else if (cat === 'Stage 1 Hypertension') { data.cell.styles.textColor = [194, 65, 12]; }
@@ -501,19 +508,21 @@ export default function History() {
     datasets: [
       {
         label: 'Systolic',
-        data: chartDataLogs.map(log => log.systolic),
+        data: chartDataLogs.map(log => (log.systolic != null ? Number(log.systolic) : null)),
         borderColor: 'rgb(239, 68, 68)',
         backgroundColor: 'rgba(239, 68, 68, 0.5)',
         tension: 0.3,
         pointRadius: 4,
+        spanGaps: true,
       },
       {
         label: 'Diastolic',
-        data: chartDataLogs.map(log => log.diastolic),
+        data: chartDataLogs.map(log => (log.diastolic != null ? Number(log.diastolic) : null)),
         borderColor: 'rgb(59, 130, 246)',
         backgroundColor: 'rgba(59, 130, 246, 0.5)',
         tension: 0.3,
         pointRadius: 4,
+        spanGaps: true,
       }
     ]
   };
