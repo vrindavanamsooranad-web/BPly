@@ -15,10 +15,10 @@ async function get3DayInsight(uid, newSystolic) {
       .filter(l => { try { return l.timestamp && isAfter(new Date(l.timestamp), threeDaysAgo); } catch { return false; } });
     if (recent.length < 3) return { text: 'Log saved successfully.', type: 'info' };
     const avg = recent.reduce((s, l) => s + (l.systolic || 0), 0) / recent.length;
-    const diff = ((newSystolic - avg) / avg) * 100;
-    if (diff > 5)  return { text: `Note: This reading is higher than your 3-day average (${Math.round(avg)} mmHg). Consider resting.`, type: 'warning' };
-    if (diff < -5) return { text: `Great news! Your reading is lower than your 3-day average (${Math.round(avg)} mmHg).`, type: 'success' };
-    return { text: 'Log saved. Your blood pressure remains stable compared to your recent average.', type: 'info' };
+    const diff = newSystolic - avg;
+    if (diff > 10)  return { text: `Note: This is significantly higher than your 3-day average (${Math.round(avg)} mmHg). Please rest and re-check in 15 minutes.`, type: 'warning' };
+    if (diff < -10) return { text: `Excellent! This reading is lower than your recent 3-day average (${Math.round(avg)} mmHg).`, type: 'success' };
+    return { text: `Your blood pressure is consistent with your recent 3-day average (${Math.round(avg)} mmHg).`, type: 'info' };
   } catch {
     return { text: 'Log saved successfully.', type: 'info' };
   }

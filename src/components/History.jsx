@@ -255,119 +255,153 @@ export default function History() {
   const [showPdf, setShowPdf] = useState(false);
 
   const generatePDF = async () => {
-    // Reveal the container to the DOM and wait for Chart bounds to calculate
     setShowPdf(true);
     setGenerating(true);
-
-    // Wait 800ms to ensure chart is fully rendered by react-chartjs-2
     await new Promise(resolve => setTimeout(resolve, 800));
+    if (!printRef.current) { setGenerating(false); setShowPdf(false); return; }
 
-    if (!printRef.current) {
-      setGenerating(false);
-      setShowPdf(false);
-      return;
-    }
-    
     try {
-      const element = printRef.current;
-      const canvas = await html2canvas(element, { 
-        scale: 3, 
-        useCORS: true, 
-        logging: false, 
-        backgroundColor: '#ffffff'
-      });
+      // ── Capture chart-only image ─────────────────────────────────────────
+      const canvas = await html2canvas(printRef.current, { scale: 3, useCORS: true, logging: false, backgroundColor: '#ffffff' });
       const imgData = canvas.toDataURL('image/png');
-      
+
       const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-      
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      const pw  = pdf.internal.pageSize.getWidth();   // 210
+      const ph  = pdf.internal.pageSize.getHeight();  // 297
+      const lm  = 15;   // left margin
+      const tw  = pw - lm * 2;  // usable width
 
-      // ── AHA Executive Summary Box ────────────────────────────────────────
-      try {
-        const sevenDaysAgo = subDays(new Date(), 7);
-        const sevenDayLogs = allLogs.filter(l => { try { return l.timestamp && isAfter(new Date(l.timestamp), sevenDaysAgo); } catch { return false; } });
-        const avgSys = sevenDayLogs.length > 0 ? Math.round(sevenDayLogs.reduce((s, l) => s + (l.systolic || 0), 0) / sevenDayLogs.length) : null;
-        const avgDia = sevenDayLogs.length > 0 ? Math.round(sevenDayLogs.reduce((s, l) => s + (l.diastolic || 0), 0) / sevenDayLogs.length) : null;
-        const avgCat = avgSys && avgDia ? classifyBP(avgSys, avgDia) : null;
-        const bx = 15, by = pdfHeight + 8, bw = pdfWidth - 30, bh = 42;
-        pdf.setFillColor(248, 250, 252);
-        pdf.rect(bx, by, bw, bh, 'F');
-        pdf.setDrawColor(226, 232, 240); pdf.setLineWidth(0.3);
-        pdf.rect(bx, by, bw, bh, 'S');
-        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(7.5); pdf.setTextColor(100, 116, 139);
-        pdf.text('EXECUTIVE SUMMARY — 7-DAY OVERVIEW', bx + 4, by + 8);
-        pdf.setFontSize(9); pdf.setTextColor(15, 23, 42);
-        const r1 = by + 18, r2 = by + 30, c1 = bx + 4, c2 = bx + 97;
-        pdf.setFont('helvetica', 'bold'); pdf.text('7-Day Average:', c1, r1);
-        pdf.setFont('helvetica', 'normal'); pdf.text(avgSys && avgDia ? `${avgSys} / ${avgDia} mmHg` : 'Insufficient data', c1 + 36, r1);
-        pdf.setFont('helvetica', 'bold'); pdf.text('AHA Category:', c2, r1);
-        pdf.setFont('helvetica', 'normal'); pdf.text(avgCat ? avgCat.label : 'N/A', c2 + 34, r1);
-        pdf.setFont('helvetica', 'bold'); pdf.text('Log Count:', c1, r2);
-        pdf.setFont('helvetica', 'normal'); pdf.text(`${filteredLogs.length} readings in selected period`, c1 + 25, r2);
-        pdf.setFont('helvetica', 'bold'); pdf.text('Report Period:', c2, r2);
-        pdf.setFont('helvetica', 'normal'); pdf.text(reportDateRange, c2 + 34, r2);
-      } catch (summaryErr) { console.warn('Summary box skipped:', summaryErr); }
+      // ── Compute clinical metrics ─────────────────────────────────────────
+      const safeAvg = arr => arr.length ? Math.round(arr.reduce((s, v) => s + v, 0) / arr.length) : null;
 
-      // Inject actual log registry directly using autoTable to prevent page cutoffs
+      const allSys = filteredLogs.map(l => l.systolic);
+      const allDia = filteredLogs.map(l => l.diastolic);
+      const oAvgSys = safeAvg(allSys), oAvgDia = safeAvg(allDia);
+      const overallCat = oAvgSys && oAvgDia ? classifyBP(oAvgSys, oAvgDia) : null;
+
+      const now = new Date();
+      const mornLogs = filteredLogs.filter(l => { try { return new Date(l.timestamp).getHours() < 10; } catch { return false; } });
+      const eveLogs  = filteredLogs.filter(l => { try { return new Date(l.timestamp).getHours() >= 18; } catch { return false; } });
+      const mAvgS = safeAvg(mornLogs.map(l => l.systolic)), mAvgD = safeAvg(mornLogs.map(l => l.diastolic));
+      const eAvgS = safeAvg(eveLogs.map(l => l.systolic)),  eAvgD = safeAvg(eveLogs.map(l => l.diastolic));
+
+      const pulseLogs = filteredLogs.filter(l => l.pulse);
+      const avgPulse  = safeAvg(pulseLogs.map(l => l.pulse));
+      const minPulse  = pulseLogs.length ? Math.min(...pulseLogs.map(l => l.pulse)) : null;
+      const maxPulse  = pulseLogs.length ? Math.max(...pulseLogs.map(l => l.pulse)) : null;
+
+      const last7  = filteredLogs.filter(l => { try { return isAfter(new Date(l.timestamp), subDays(now, 7)); } catch { return false; } });
+      const prev7  = filteredLogs.filter(l => { try { const d = new Date(l.timestamp); return isAfter(d, subDays(now, 14)) && isBefore(d, subDays(now, 7)); } catch { return false; } });
+      let trendLabel = 'Stable';
+      if (last7.length >= 2 && prev7.length >= 2) {
+        const l7 = last7.reduce((s, l) => s + l.systolic, 0) / last7.length;
+        const p7 = prev7.reduce((s, l) => s + l.systolic, 0) / prev7.length;
+        if (l7 - p7 > 5) trendLabel = 'Increasing ↑';
+        else if (p7 - l7 > 5) trendLabel = 'Decreasing ↓';
+      }
+
+      // ── HEADER (jsPDF text) ─────────────────────────────────────────────
+      let y = 14;
+      pdf.setFont('helvetica', 'bold'); pdf.setFontSize(18); pdf.setTextColor(15, 23, 42);
+      pdf.text('BLOOD PRESSURE REPORT', lm, y);
+      pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8.5); pdf.setTextColor(100, 116, 139);
+      pdf.text('Generated by BPly  •  https://bply.vercel.app', lm, y + 6);
+
+      pdf.setFont('helvetica', 'bold'); pdf.setFontSize(11); pdf.setTextColor(15, 23, 42);
+      pdf.text(userProfile?.name || 'Patient', pw - lm, y, { align: 'right' });
+      pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8.5); pdf.setTextColor(100, 116, 139);
+      pdf.text(`Age: ${patientAge}  |  ${reportDateRange}`, pw - lm, y + 6, { align: 'right' });
+
+      y += 12;
+      pdf.setDrawColor(226, 232, 240); pdf.setLineWidth(0.5);
+      pdf.line(lm, y, pw - lm, y);
+      y += 5;
+
+      // ── EXECUTIVE CLINICAL SUMMARY BOX ──────────────────────────────────
+      const boxH = 68;
+      pdf.setFillColor(248, 250, 252); pdf.rect(lm, y, tw, boxH, 'F');
+      pdf.setDrawColor(226, 232, 240); pdf.setLineWidth(0.3); pdf.rect(lm, y, tw, boxH, 'S');
+
+      pdf.setFont('helvetica', 'bold'); pdf.setFontSize(7.5); pdf.setTextColor(71, 85, 105);
+      pdf.text('EXECUTIVE CLINICAL SUMMARY', lm + 4, y + 8);
+      pdf.setDrawColor(226, 232, 240); pdf.setLineWidth(0.2);
+      pdf.line(lm + 2, y + 11, lm + tw - 2, y + 11);
+
+      const c1 = lm + 4, c2 = lm + 100;
+      const r1 = y + 21, r2 = y + 35, r3 = y + 49, r4 = y + 62;
+
+      pdf.setFontSize(8.5); pdf.setTextColor(15, 23, 42);
+      pdf.setFont('helvetica', 'bold');  pdf.text('Overall Average:', c1, r1);
+      pdf.setFont('helvetica', 'normal'); pdf.text(oAvgSys && oAvgDia ? `${oAvgSys}/${oAvgDia} mmHg  ·  ${overallCat?.label || ''}` : 'N/A', c1 + 33, r1);
+      pdf.setFont('helvetica', 'bold');  pdf.text('7-Day Trend:', c2, r1);
+      pdf.setFont('helvetica', 'normal'); pdf.text(trendLabel, c2 + 25, r1);
+
+      pdf.setFont('helvetica', 'bold');  pdf.text('Morning Avg  (<10 AM):', c1, r2);
+      pdf.setFont('helvetica', 'normal'); pdf.text(mAvgS && mAvgD ? `${mAvgS}/${mAvgD} mmHg  (${mornLogs.length} readings)` : 'No morning data', c1 + 45, r2);
+      pdf.setFont('helvetica', 'bold');  pdf.text('Evening Avg  (>6 PM):', c2, r2);
+      pdf.setFont('helvetica', 'normal'); pdf.text(eAvgS && eAvgD ? `${eAvgS}/${eAvgD} mmHg  (${eveLogs.length} readings)` : 'No evening data', c2 + 43, r2);
+
+      pdf.setFont('helvetica', 'bold');  pdf.text('Heart Rate:', c1, r3);
+      pdf.setFont('helvetica', 'normal'); pdf.text(avgPulse ? `Avg ${avgPulse} BPM  ·  Range ${minPulse}–${maxPulse} BPM` : 'No pulse data recorded', c1 + 22, r3);
+      pdf.setFont('helvetica', 'bold');  pdf.text('Log Count:', c2, r3);
+      pdf.setFont('helvetica', 'normal'); pdf.text(`${filteredLogs.length} readings`, c2 + 22, r3);
+
+      pdf.setFont('helvetica', 'italic'); pdf.setFontSize(7.5); pdf.setTextColor(148, 163, 184);
+      pdf.text(`Morning Surge: A systolic rise >20 mmHg from evening to morning may warrant clinical review.`, c1, r4);
+
+      y += boxH + 6;
+
+      // ── TREND GRAPH ─────────────────────────────────────────────────────
+      pdf.setFont('helvetica', 'bold'); pdf.setFontSize(8.5); pdf.setTextColor(71, 85, 105);
+      pdf.text('BLOOD PRESSURE TREND', lm, y);
+      y += 3;
+      const chartH = (canvas.height * tw) / canvas.width;
+      pdf.addImage(imgData, 'PNG', lm, y, tw, chartH);
+      y += chartH + 6;
+
+      // ── DATA TABLE ──────────────────────────────────────────────────────
       const tableBody = [];
       Object.entries(groupedLogs).forEach(([date, logs]) => {
         tableBody.push([{ content: date, colSpan: 5, styles: { fontStyle: 'bold', fillColor: [248, 250, 252], textColor: [15, 23, 42] } }]);
-        
         logs.forEach(log => {
           let timeStr = '-';
           try { timeStr = format(new Date(log.timestamp), 'hh:mm a'); } catch(e) {}
-          const isHigh = log.systolic >= 140 || log.diastolic >= 90;
-          
-          tableBody.push([
-            timeStr,
-            log.systolic.toString(),
-            log.diastolic.toString(),
-            log.pulse ? log.pulse.toString() : '-',
-            isHigh ? 'High BP' : '-'
-          ]);
+          const cat = classifyBP(log.systolic, log.diastolic);
+          tableBody.push([timeStr, log.systolic.toString(), log.diastolic.toString(), log.pulse ? log.pulse.toString() : '-', cat.label]);
         });
       });
 
       autoTable(pdf, {
-        startY: pdfHeight + 58,
-        head: [['Time', 'Systolic', 'Diastolic', 'Pulse', 'Alerts']],
+        startY: y,
+        head: [['Time', 'Systolic', 'Diastolic', 'Pulse', 'AHA Category']],
         body: tableBody,
         theme: 'grid',
-        headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' }, // slate-900 
+        headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' },
         alternateRowStyles: { fillColor: [248, 250, 252] },
-        didParseCell: function(data) {
-          if (data.section === 'body') {
-            if (data.row.raw.length > 1) {
-              const alertText = data.row.raw[4];
-              
-              if (alertText === 'High BP') {
-                data.cell.styles.textColor = [185, 28, 28]; // red-700
-                data.cell.styles.fontStyle = 'bold';
-              }
-            }
+        margin: { left: lm, right: lm, top: 15, bottom: 20 },
+        pageBreak: 'auto',
+        didParseCell(data) {
+          if (data.section === 'body' && data.col.index === 4 && data.row.raw.length > 1) {
+            const cat = data.cell.raw;
+            if (cat === 'Hypertensive Crisis')    { data.cell.styles.textColor = [127, 0, 0];   data.cell.styles.fontStyle = 'bold'; }
+            else if (cat === 'Stage 2 Hypertension') { data.cell.styles.textColor = [185, 28, 28]; data.cell.styles.fontStyle = 'bold'; }
+            else if (cat === 'Stage 1 Hypertension') { data.cell.styles.textColor = [194, 65, 12]; }
+            else if (cat === 'Elevated')             { data.cell.styles.textColor = [161, 98, 7]; }
+            else                                     { data.cell.styles.textColor = [21, 128, 61]; }
           }
         },
-        margin: { top: 15, bottom: 20 },
-        pageBreak: 'auto'
       });
 
-      // Add professional footer dynamically to every generated page
+      // Footer on every page
       const pageCount = pdf.internal.getNumberOfPages();
-      for(let i = 1; i <= pageCount; i++) {
+      for (let i = 1; i <= pageCount; i++) {
         pdf.setPage(i);
-        
-        // Footer line
-        pdf.setDrawColor(226, 232, 240); // slate-200
-        pdf.line(15, pdf.internal.pageSize.getHeight() - 15, pdfWidth - 15, pdf.internal.pageSize.getHeight() - 15);
-        
-        pdf.setFontSize(8);
-        pdf.setTextColor(148, 163, 184); // slate-400
-        pdf.text('BPly Dashboards • Personal Reference  |  https://bply.vercel.app', pdfWidth / 2, pdf.internal.pageSize.getHeight() - 10, { align: 'center' });
+        pdf.setDrawColor(226, 232, 240); pdf.line(lm, ph - 15, pw - lm, ph - 15);
+        pdf.setFontSize(8); pdf.setTextColor(148, 163, 184);
+        pdf.text('BPly Dashboards • Personal Reference  |  https://bply.vercel.app', pw / 2, ph - 10, { align: 'center' });
       }
 
-      pdf.save(`BP_Report_${userProfile?.name}.pdf`);
+      pdf.save(`BP_Report_${userProfile?.name || 'Patient'}.pdf`);
     } catch (err) {
       console.error('PDF Generation Error:', err);
       alert(`Failed to generate PDF. Error: ${err.message}`);
@@ -708,63 +742,19 @@ export default function History() {
         </div>
       )}
 
-      {/* Hidden PDF Payload (Expanded standard A4 view) */}
+      {/* Hidden PDF chart capture (chart only — header + summary drawn by jsPDF) */}
       {showPdf && (
         <div style={{ position: 'absolute', left: '-9999px', top: 0, backgroundColor: '#ffffff' }}>
-          <div ref={printRef} style={{ width: '800px', backgroundColor: '#ffffff', padding: '40px', color: '#1e293b', fontFamily: 'sans-serif' }}>
-            
-            {/* Header: Logo & Title Row */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '10px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Activity style={{ width: '28px', height: '28px', color: '#2563eb' }} />
-                  <span style={{ fontSize: '20px', fontWeight: '800', color: '#1e293b' }}>BPly</span>
-                </div>
-                <div>
-                  <h1 style={{ fontSize: '40px', fontWeight: '900', color: '#0f172a', margin: 0, letterSpacing: '-1px' }}>BLOOD PRESSURE REPORT</h1>
-                  <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    REPORT PERIOD: {reportDateRange}
-                  </p>
-                </div>
-              </div>
-
-              {/* Patient Metadata Card (Top Right) */}
-              <div style={{ borderLeft: '2px solid #e2e8f0', paddingLeft: '24px', textAlign: 'right' }}>
-                <h2 style={{ fontSize: '24px', fontWeight: '900', color: '#0f172a', margin: '0 0 4px 0' }}>{userProfile?.name || 'A S KRISHNAJITH'}</h2>
-                <p style={{ margin: 0, fontSize: '13px', fontWeight: '700', color: '#64748b', textTransform: 'uppercase' }}>
-                  AGE: {patientAge} | GENDER: {userProfile?.gender || 'MALE'}
-                </p>
-                <p style={{ margin: '2px 0 0 0', fontSize: '13px', fontWeight: '600', color: '#94a3b8' }}>
-                  DOB: {userProfile?.dob || '2009-03-18'}
-                </p>
-              </div>
-            </div>
-
-            <div style={{ borderBottom: '2px solid #0f172a', margin: '20px 0 30px 0' }}></div>
-
-            <p style={{ fontSize: '12px', color: '#64748b', fontStyle: 'italic', marginBottom: '24px' }}>
-              This document was generated on {format(new Date(), 'MMMM dd, yyyy')} via the BPly Tracker Application.
-            </p>
-
-            {/* Visualization Section */}
-            <div>
-              <h3 style={{ fontSize: '18px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#0f172a', marginBottom: '16px' }}>VISUALIZATION</h3>
-              <div style={{ height: '380px', width: '100%', padding: '20px', border: '1px solid #e2e8f0', borderRadius: '16px', backgroundColor: '#ffffff' }}>
-                <Line 
-                  data={chartData} 
-                  options={{
-                    ...chartOptions, 
-                    animation: false, 
-                    plugins: { ...chartOptions.plugins, legend: { position: 'top', align: 'center' } },
-                    scales: { 
-                      ...chartOptions.scales, 
-                      y: { min: 0, max: 300, ticks: { stepSize: 50 } },
-                      x: { grid: { display: false } }
-                    } 
-                  }} 
-                />
-              </div>
-            </div>
+          <div ref={printRef} style={{ width: '720px', backgroundColor: '#ffffff', padding: '16px' }}>
+            <Line
+              data={chartData}
+              options={{
+                ...chartOptions,
+                animation: false,
+                plugins: { ...chartOptions.plugins, legend: { position: 'top', align: 'center' } },
+                scales: { y: { min: 40, max: 220, ticks: { stepSize: 40 } }, x: { grid: { display: false } } }
+              }}
+            />
           </div>
         </div>
       )}
