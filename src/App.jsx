@@ -22,24 +22,33 @@ class ErrorBoundary extends Component {
   static getDerivedStateFromError() {
     return { hasError: true };
   }
-  componentDidCatch() {
-    // Errors intentionally suppressed in production UI
+  componentDidCatch(err) {
+    console.warn('[BPly] Caught by error boundary:', err?.message);
   }
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
-          <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-slate-200 p-8 text-center">
-            <div className="text-5xl mb-4">⚠️</div>
-            <h1 className="text-xl font-bold text-slate-800 mb-2">Something went wrong</h1>
-            <p className="text-slate-500 text-sm mb-6">An unexpected error occurred. Please reload the page.</p>
-            <button
-              onClick={() => window.location.reload()}
-              className="bg-slate-800 text-white font-semibold px-6 py-2.5 rounded-xl hover:bg-slate-900 transition"
-            >
-              Reload App
-            </button>
+        <div className="min-h-screen bg-slate-50 p-4 sm:p-8 space-y-6 animate-pulse max-w-2xl mx-auto pt-12">
+          <div className="h-8 w-48 bg-slate-200 rounded-xl" />
+          <div className="bg-white rounded-2xl border border-slate-100 p-6 space-y-4">
+            <div className="h-5 w-64 bg-slate-200 rounded-lg" />
+            <div className="h-4 w-48 bg-slate-100 rounded-md" />
+            <div className="grid grid-cols-2 gap-4 pt-2">
+              <div className="h-20 bg-slate-100 rounded-xl" />
+              <div className="h-20 bg-slate-100 rounded-xl" />
+            </div>
+            <div className="h-12 w-full bg-slate-200 rounded-xl mt-2" />
           </div>
+          <div className="bg-white rounded-2xl border border-slate-100 p-6 space-y-4">
+            <div className="h-5 w-40 bg-slate-200 rounded-lg" />
+            <div className="h-56 w-full bg-slate-100 rounded-xl" />
+          </div>
+          <p className="text-center text-xs text-slate-400 pt-2">
+            Recovering…&nbsp;
+            <button onClick={() => window.location.reload()} className="underline text-slate-500 hover:text-slate-700">
+              Reload
+            </button>
+          </p>
         </div>
       );
     }

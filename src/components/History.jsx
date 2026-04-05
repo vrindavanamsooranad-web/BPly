@@ -24,6 +24,9 @@ function ShareModal({ userId, userName, profile, onClose }) {
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // Clear email input when owner enables public mode (Google Drive behaviour)
+  useEffect(() => { if (isPublic) setEmailInput(''); }, [isPublic]);
+
   const profileRef = doc(db, 'users', userId);
 
   const handleAccessChange = async (pub) => {
@@ -272,12 +275,16 @@ export default function History() {
       const tw  = pw - lm * 2;  // usable width
 
       // ── Compute clinical metrics ─────────────────────────────────────────
-      const safeAvg = arr => arr.length ? Math.round(arr.reduce((s, v) => s + v, 0) / arr.length) : null;
+      // safeAvg: returns null (not NaN) for empty or all-undefined arrays
+      const safeAvg = arr => {
+        const valid = arr.filter(v => v != null && !isNaN(v));
+        return valid.length ? Math.round(valid.reduce((s, v) => s + v, 0) / valid.length) : null;
+      };
 
-      const allSys = filteredLogs.map(l => l.systolic);
-      const allDia = filteredLogs.map(l => l.diastolic);
+      const allSys = filteredLogs.map(l => (l.systolic != null ? Number(l.systolic) : null));
+      const allDia = filteredLogs.map(l => (l.diastolic != null ? Number(l.diastolic) : null));
       const oAvgSys = safeAvg(allSys), oAvgDia = safeAvg(allDia);
-      const overallCat = oAvgSys && oAvgDia ? classifyBP(oAvgSys, oAvgDia) : null;
+      const overallCat = oAvgSys != null && oAvgDia != null ? classifyBP(oAvgSys, oAvgDia) : null;
 
       const now = new Date();
       const mornLogs = filteredLogs.filter(l => { try { return new Date(l.timestamp).getHours() < 10; } catch { return false; } });

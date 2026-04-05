@@ -5,6 +5,7 @@
 export function classifyBP(systolic, diastolic) {
   const s = Number(systolic);
   const d = Number(diastolic);
+  if (isNaN(s) || isNaN(d) || s <= 0 || d <= 0) return { label: 'Unknown', color: 'normal' };
   if (s >= 180 || d >= 120) return { label: 'Hypertensive Crisis', color: 'crisis' };
   if (s >= 140 || d >= 90)  return { label: 'Stage 2 Hypertension', color: 'stage2' };
   if (s >= 130 || d >= 80)  return { label: 'Stage 1 Hypertension', color: 'stage1' };
