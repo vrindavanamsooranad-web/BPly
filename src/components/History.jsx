@@ -275,39 +275,6 @@ export default function History() {
       const lm  = 15;   // left margin
       const tw  = pw - lm * 2;  // usable width
 
-      // ── Compute clinical metrics ─────────────────────────────────────────
-      // safeAvg: returns null (not NaN) for empty or all-undefined arrays
-      const safeAvg = arr => {
-        const valid = arr.filter(v => v != null && !isNaN(v));
-        return valid.length ? Math.round(valid.reduce((s, v) => s + v, 0) / valid.length) : null;
-      };
-
-      const allSys = filteredLogs.map(l => (l.systolic != null ? Number(l.systolic) : null));
-      const allDia = filteredLogs.map(l => (l.diastolic != null ? Number(l.diastolic) : null));
-      const oAvgSys = safeAvg(allSys), oAvgDia = safeAvg(allDia);
-      const overallCat = oAvgSys != null && oAvgDia != null ? classifyBP(oAvgSys, oAvgDia) : null;
-
-      const now = new Date();
-      const mornLogs = filteredLogs.filter(l => { try { return new Date(l.timestamp).getHours() < 10; } catch { return false; } });
-      const eveLogs  = filteredLogs.filter(l => { try { return new Date(l.timestamp).getHours() >= 18; } catch { return false; } });
-      const mAvgS = safeAvg(mornLogs.map(l => l.systolic)), mAvgD = safeAvg(mornLogs.map(l => l.diastolic));
-      const eAvgS = safeAvg(eveLogs.map(l => l.systolic)),  eAvgD = safeAvg(eveLogs.map(l => l.diastolic));
-
-      const pulseLogs = filteredLogs.filter(l => l.pulse);
-      const avgPulse  = safeAvg(pulseLogs.map(l => l.pulse));
-      const minPulse  = pulseLogs.length ? Math.min(...pulseLogs.map(l => l.pulse)) : null;
-      const maxPulse  = pulseLogs.length ? Math.max(...pulseLogs.map(l => l.pulse)) : null;
-
-      const last7  = filteredLogs.filter(l => { try { return isAfter(new Date(l.timestamp), subDays(now, 7)); } catch { return false; } });
-      const prev7  = filteredLogs.filter(l => { try { const d = new Date(l.timestamp); return isAfter(d, subDays(now, 14)) && isBefore(d, subDays(now, 7)); } catch { return false; } });
-      let trendLabel = 'Stable';
-      if (last7.length >= 2 && prev7.length >= 2) {
-        const l7 = last7.reduce((s, l) => s + l.systolic, 0) / last7.length;
-        const p7 = prev7.reduce((s, l) => s + l.systolic, 0) / prev7.length;
-        if (l7 - p7 > 5) trendLabel = 'Increasing ↑';
-        else if (p7 - l7 > 5) trendLabel = 'Decreasing ↓';
-      }
-
       // ── HEADER (jsPDF text) ─────────────────────────────────────────────
       let y = 14;
       // Brand Name "BPly"
@@ -338,40 +305,6 @@ export default function History() {
       pdf.line(lm, y, pw - lm, y);
       y += 5;
 
-      // ── EXECUTIVE CLINICAL SUMMARY BOX ──────────────────────────────────
-      const boxH = 68;
-      pdf.setFillColor(248, 250, 252); pdf.rect(lm, y, tw, boxH, 'F');
-      pdf.setDrawColor(226, 232, 240); pdf.setLineWidth(0.3); pdf.rect(lm, y, tw, boxH, 'S');
-
-      pdf.setFont('helvetica', 'bold'); pdf.setFontSize(7.5); pdf.setTextColor(71, 85, 105);
-      pdf.text('EXECUTIVE CLINICAL SUMMARY', lm + 4, y + 8);
-      pdf.setDrawColor(226, 232, 240); pdf.setLineWidth(0.2);
-      pdf.line(lm + 2, y + 11, lm + tw - 2, y + 11);
-
-      const c1 = lm + 4, c2 = lm + 100;
-      const r1 = y + 21, r2 = y + 35, r3 = y + 49, r4 = y + 62;
-
-      pdf.setFontSize(8.5); pdf.setTextColor(15, 23, 42);
-      pdf.setFont('helvetica', 'bold');  pdf.text('Overall Average:', c1, r1);
-      pdf.setFont('helvetica', 'normal'); pdf.text(oAvgSys && oAvgDia ? `${oAvgSys}/${oAvgDia} mmHg  ·  ${overallCat?.label || ''}` : 'N/A', c1 + 33, r1);
-      pdf.setFont('helvetica', 'bold');  pdf.text('7-Day Trend:', c2, r1);
-      pdf.setFont('helvetica', 'normal'); pdf.text(trendLabel, c2 + 25, r1);
-
-      pdf.setFont('helvetica', 'bold');  pdf.text('Morning Avg  (<10 AM):', c1, r2);
-      pdf.setFont('helvetica', 'normal'); pdf.text(mAvgS && mAvgD ? `${mAvgS}/${mAvgD} mmHg  (${mornLogs?.length || 0} readings)` : 'N/A', c1 + 45, r2);
-      pdf.setFont('helvetica', 'bold');  pdf.text('Evening Avg  (>6 PM):', c2, r2);
-      pdf.setFont('helvetica', 'normal'); pdf.text(eAvgS && eAvgD ? `${eAvgS}/${eAvgD} mmHg  (${eveLogs?.length || 0} readings)` : 'N/A', c2 + 43, r2);
-
-      pdf.setFont('helvetica', 'bold');  pdf.text('Heart Rate:', c1, r3);
-      pdf.setFont('helvetica', 'normal'); pdf.text(avgPulse ? `Avg ${avgPulse} BPM  ·  Range ${minPulse}–${maxPulse} BPM` : 'No pulse data recorded', c1 + 22, r3);
-      pdf.setFont('helvetica', 'bold');  pdf.text('Log Count:', c2, r3);
-      pdf.setFont('helvetica', 'normal'); pdf.text(`${filteredLogs.length} readings`, c2 + 22, r3);
-
-      pdf.setFont('helvetica', 'italic'); pdf.setFontSize(7.5); pdf.setTextColor(148, 163, 184);
-      pdf.text(`Morning Surge: A systolic rise >20 mmHg from evening to morning may warrant clinical review.`, c1, r4);
-
-      y += boxH + 6;
-
       // ── TREND GRAPH ─────────────────────────────────────────────────────
       pdf.setFont('helvetica', 'bold'); pdf.setFontSize(8.5); pdf.setTextColor(71, 85, 105);
       pdf.text('BLOOD PRESSURE TREND', lm, y);
@@ -382,22 +315,27 @@ export default function History() {
 
       // ── DATA TABLE ──────────────────────────────────────────────────────
       const tableBody = [];
-      Object.entries(groupedLogs).forEach(([date, logs]) => {
-        tableBody.push([{ content: date, colSpan: 5, styles: { fontStyle: 'bold', fillColor: [248, 250, 252], textColor: [15, 23, 42] } }]);
-        logs.forEach(log => {
-          let timeStr = '-';
-          try { timeStr = format(new Date(log.timestamp), 'hh:mm a'); } catch(e) {}
-          const cat = classifyBP(log.systolic, log.diastolic);
-          tableBody.push([
-            timeStr,
-            (log.systolic ?? '—').toString(),
-            (log.diastolic ?? '—').toString(),
-            log.pulse ? log.pulse.toString() : '-',
-            cat.label
-          ]);
+      const groupedEntries = Object.entries(groupedLogs);
+      
+      if (groupedEntries.length === 0) {
+        tableBody.push([{ content: 'No records found', colSpan: 5, styles: { halign: 'center', fontStyle: 'italic', textColor: [100, 116, 139] } }]);
+      } else {
+        groupedEntries.forEach(([date, logs]) => {
+          tableBody.push([{ content: date, colSpan: 5, styles: { fontStyle: 'bold', fillColor: [248, 250, 252], textColor: [15, 23, 42] } }]);
+          logs.forEach(log => {
+            let timeStr = '-';
+            try { timeStr = format(new Date(log.timestamp), 'hh:mm a'); } catch(e) {}
+            const cat = classifyBP(log.systolic, log.diastolic);
+            tableBody.push([
+              timeStr,
+              (log.systolic ?? '—').toString(),
+              (log.diastolic ?? '—').toString(),
+              log.pulse ? log.pulse.toString() : '-',
+              cat.label
+            ]);
+          });
         });
-      });
-
+      }
       autoTable(pdf, {
         startY: y,
         head: [['Time', 'Systolic', 'Diastolic', 'Pulse', 'AHA Category']],
@@ -406,16 +344,16 @@ export default function History() {
         headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' },
         alternateRowStyles: { fillColor: [248, 250, 252] },
         margin: { left: lm, right: lm, top: 15, bottom: 20 },
-        pageBreak: 'auto',
+        showHead: 'everyPage',
         didParseCell(data) {
           if (data.section === 'body' && data.col?.index === 4 && (data.row?.raw?.length ?? 0) > 1) {
             const cat = data.cell?.raw;
-            if (!cat) return;
+            if (!cat || typeof cat !== 'string') return;
             if (cat === 'Hypertensive Crisis')    { data.cell.styles.textColor = [127, 0, 0];   data.cell.styles.fontStyle = 'bold'; }
             else if (cat === 'Stage 2 Hypertension') { data.cell.styles.textColor = [185, 28, 28]; data.cell.styles.fontStyle = 'bold'; }
             else if (cat === 'Stage 1 Hypertension') { data.cell.styles.textColor = [194, 65, 12]; }
             else if (cat === 'Elevated')             { data.cell.styles.textColor = [161, 98, 7]; }
-            else                                     { data.cell.styles.textColor = [21, 128, 61]; }
+            else if (cat === 'Normal')               { data.cell.styles.textColor = [21, 128, 61]; }
           }
         },
       });
@@ -427,6 +365,8 @@ export default function History() {
         pdf.setDrawColor(226, 232, 240); pdf.line(lm, ph - 15, pw - lm, ph - 15);
         pdf.setFontSize(8); pdf.setTextColor(148, 163, 184);
         pdf.text('BPly Dashboards • Personal Reference  |  https://bply.vercel.app', pw / 2, ph - 10, { align: 'center' });
+        // Page X of Y pagination on the bottom right
+        pdf.text(`Page ${i} of ${pageCount}`, pw - lm, ph - 10, { align: 'right' });
       }
 
       pdf.save(`BP_Report_${userProfile?.name || 'Patient'}.pdf`);
