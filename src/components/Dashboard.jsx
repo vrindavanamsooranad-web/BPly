@@ -14,11 +14,18 @@ async function get3DayInsight(uid, newSystolic) {
       .map(d => d.data())
       .filter(l => { try { return l.timestamp && isAfter(new Date(l.timestamp), threeDaysAgo); } catch { return false; } });
     if (recent.length < 3) return { text: 'Log saved successfully.', type: 'info' };
-    const avg = recent.reduce((s, l) => s + (l.systolic || 0), 0) / recent.length;
-    const diff = newSystolic - avg;
-    if (diff > 10)  return { text: `Note: This is significantly higher than your 3-day average (${Math.round(avg)} mmHg). Please rest and re-check in 15 minutes.`, type: 'warning' };
-    if (diff < -10) return { text: `Excellent! This reading is lower than your recent 3-day average (${Math.round(avg)} mmHg).`, type: 'success' };
-    return { text: `Your blood pressure is consistent with your recent 3-day average (${Math.round(avg)} mmHg).`, type: 'info' };
+    
+    const validLogs = recent.filter(l => l.systolic != null);
+    if (!validLogs.length) return { text: 'Log saved successfully.', type: 'info' };
+
+    const avg = validLogs.reduce((s, l) => s + Number(l.systolic), 0) / validLogs.length;
+    if (avg === 0) return { text: 'Log saved successfully.', type: 'info' };
+
+    const diffPercent = Math.round(Math.abs((newSystolic - avg) / avg) * 100);
+    
+    if (newSystolic > avg * 1.05) return { text: `Log saved. This reading is ${diffPercent}% higher than your 3-day average.`, type: 'warning' };
+    if (newSystolic < avg * 0.95) return { text: `Log saved. This reading is ${diffPercent}% lower than your 3-day average.`, type: 'success' };
+    return { text: `Log saved. Your blood pressure is consistent with your 3-day average.`, type: 'info' };
   } catch {
     return { text: 'Log saved successfully.', type: 'info' };
   }
